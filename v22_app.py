@@ -289,9 +289,157 @@ def fetch_race_data(date: str, jcd: int, rno: int):
     return rows, lane_to_rank, odds_map, payoff
 
 
+# ============================================================
+# 公式サイト(boatrace.jp)からの取得（直前情報・オッズ）
+# ============================================================
+def fetch_official_beforeinfo(date: str, jcd: int, rno: int) -> Dict:
+    """公式の直前情報ページから展示タイム・コースIN・気象を取得。
+    返り値: {'tenji': {lane:float}, 'course_in': {lane:int}, 'weather': {...}}
+    失敗時は空辞書を返す。"""
+    url = f"https://www.boatrace.jp/owpc/pc/race/beforeinfo?rno={rno}&jcd={jcd:02d}&hd={date}"
+    out = {"tenji": {}, "course_in": {}, "weather": {}}
+    try:
+        r = req_sess.get(url, timeout=7)
+        r.encoding = r.apparent_encoding
+        if r.status_code != 200:
+            return {}
+        soup = BeautifulSoup(r.text, "html.parser")
+    except Exception:
+        return {}
+
+    # 直前情報テーブル: 各艇行に展示タイム・進入コースが入っている想定
+    # 公式HTMLは表構造が複雑なので、出現する数値パターンで検出する
+    try:
+        # 展示タイム: 6.xx か 7.xx (秒) のパターン
+        # まず "is-fBold" の数値セルから展示タイム候補を集める
+        for tr in soup.select("table tbody tr"):
+            tds = tr.find_all("td")
+            if len(tds) < 3: continue
+            head = tds[0].get_text(strip=True)
+            if not head.isdigit() or not (1 <= int(head) <= 6):
+                continue
+            lane = int(head)
+            for td in tds:
+                txt = td.get_text(strip=True)
+                if re.fullmatch(r'[67]\.\d{2}', txt):
+                    out["tenji"][lane] = float(txt)
+                    break
+    except Exception:
+        pass
+
+    # 進入コース: スタート展示の進入図/テキストから抽出
+    # 公式の HTML 構造を仮定（"枠なり" や明示的なコース番号があるパターン）
+    try:
+        # 「進入」見出し付近のテーブル/divを探索
+        for elem in soup.find_all(string=re.compile(r"進入|スタート展示")):
+            parent = elem.find_parent(["table", "div", "section"])
+            if not parent: continue
+            # 1〜6の数値がコース順に並ぶパターンを試行
+            txt_seq = parent.get_text(" ", strip=True)
+            nums = re.findall(r"\b([1-6])\b", txt_seq)
+            if 6 <= len(nums) <= 18:
+                # 最初の6個を「コース順→艇番」と仮定
+                # course_in[lane] = course のマップを作る
+                course_order = [int(n) for n in nums[:6]]
+                if sorted(course_order) == [1,2,3,4,5,6]:
+                    for course, lane in enumerate(course_order, 1):
+                        out["course_in"][lane] = course
+                    break
+    except Exception:
+        pass
+
+    # 気象
+    try:
+        wtxt = soup.get_text(" ", strip=True)
+        mw = re.search(r"風速\s*([\d.]+)\s*m", wtxt)
+        if mw: out["weather"]["風速(m)"] = float(mw.group(1))
+        mt = re.search(r"気温\s*([\d.]+)", wtxt)
+        if mt: out["weather"]["気温"] = float(mt.group(1))
+        mv = re.search(r"波高\s*([\d.]+)\s*cm", wtxt)
+        if mv: out["weather"]["波高(cm)"] = float(mv.group(1))
+    except Exception:
+        pass
+
+    return out
+
+
+def fetch_official_odds3t(date: str, jcd: int, rno: int) -> Dict[str, float]:
+    """公式の3連単オッズページから取得。
+    返り値: {'1-2-3': 7.5, ...} 120点。取れなければ空辞書。
+    ※ JavaScript描画で取れない可能性があるため、フォールバック前提で使うこと。"""
+    url = f"https://www.boatrace.jp/owpc/pc/race/odds3t?rno={rno}&jcd={jcd:02d}&hd={date}"
+    try:
+        r = req_sess.get(url, timeout=7)
+        r.encoding = r.apparent_encoding
+        if r.status_code != 200:
+            return {}
+        soup = BeautifulSoup(r.text, "html.parser")
+    except Exception:
+        return {}
+
+    # td.oddsPoint を全部拾う (公式の3連単オッズセル)
+    cells = soup.select("td.oddsPoint")
+    vals = []
+    for c in cells:
+        txt = c.get_text(strip=True).replace(",", "")
+        try:
+            vals.append(float(txt))
+        except ValueError:
+            vals.append(0.0)
+
+    if len(vals) != 120:
+        return {}   # JS描画等で取れていない
+
+    # 並び順: 1着外ループ→2着ブロック→3着行 (辞書順)
+    # ※前にスクリーンショットから候補Aが正解と判明済み
+    combos = [f"{a}-{b}-{c}" for a in range(1,7) for b in range(1,7)
+              for c in range(1,7) if len({a,b,c}) == 3]
+    return {c: o for c, o in zip(combos, vals) if o > 0}
+
+
+def fetch_race_data_hybrid(date: str, jcd: int, rno: int):
+    """ハイブリッド取得:
+       1) kyotei.fun から出走表・選手成績・初期オッズ・結果を取得
+       2) 公式の直前情報で展示・コースINを上書き (取れたら)
+       3) 公式のオッズで上書き (取れたら)
+       返り値: (racers, lane_to_rank, odds_map, payoff, sources)
+        sources は何が公式から取れたかのフラグ辞書"""
+    sources = {"odds_from_official": False, "tenji_from_official": False,
+               "course_in_from_official": False, "weather": {}}
+
+    base_res = fetch_race_data(date, jcd, rno)
+    if not base_res:
+        return None
+    racers, lane_to_rank, odds_map, payoff = base_res
+
+    # 公式直前情報
+    time.sleep(0.5)   # 節度のための小休止
+    bi = fetch_official_beforeinfo(date, jcd, rno)
+    if bi.get("tenji"):
+        for r in racers:
+            if r["lane"] in bi["tenji"]:
+                r["tenji"] = bi["tenji"][r["lane"]]
+        sources["tenji_from_official"] = True
+    if bi.get("course_in"):
+        for r in racers:
+            if r["lane"] in bi["course_in"]:
+                r["course_in"] = bi["course_in"][r["lane"]]
+        sources["course_in_from_official"] = True
+    sources["weather"] = bi.get("weather", {})
+
+    # 公式オッズ
+    time.sleep(0.5)
+    official_odds = fetch_official_odds3t(date, jcd, rno)
+    if official_odds and len(official_odds) >= 100:
+        odds_map = official_odds
+        sources["odds_from_official"] = True
+
+    return racers, lane_to_rank, odds_map, payoff, sources
+
+
 def select_bets_by_ev(combo_probs: Dict[str, float], odds_map: Dict[str, float],
                        ev_th: float, top_n_prob: int, max_n: int) -> List[Dict]:
-    """確率の高い順に上位 top_n_prob 点に絞り、その中で EV>=ev_th を EV 降順で最大 max_n 点。"""
+    """確率上位N点に絞り、その中でEV>=ev_thをEV降順で最大max_n点採用。"""
     sorted_by_prob = sorted(combo_probs.items(), key=lambda x: x[1], reverse=True)
     candidates = sorted_by_prob[:top_n_prob]
     out = []
@@ -354,151 +502,4 @@ with tab1:
         records, bet_details = [], []
         for idx, (d, j, r) in enumerate(race_keys):
             sub = df[(df["date"]==d)&(df["jcd"]==j)&(df["rno"]==r)]
-            if len(sub) != 6: continue
-            racers = sub.to_dict("records")
-            try:
-                odds_map = json.loads(sub.iloc[0]["odds_3t_json"])
-            except Exception:
-                continue
-            result_combo = sub.iloc[0]["result_combo"]
-            payoff = int(sub.iloc[0]["payoff_3t"])
-
-            feat_df = make_race_features(racers)
-            combo_probs = predict_combo_probs(feat_df, int(j))
-            chosen = select_bets_by_ev(combo_probs, odds_map, ev_th, top_n_prob, max_bets)
-
-            buys = [c["bet"] for c in chosen]
-            hit = result_combo in buys
-            inv = len(buys) * bet_amt
-            ret = payoff * (bet_amt/100.0) if hit else 0
-            records.append({
-                "date":d, "jcd":int(j), "rno":int(r),
-                "n_bets": len(buys),
-                "buys": ",".join(buys) if buys else "見",
-                "result": result_combo,
-                "hit": 1 if hit else 0,
-                "investment": inv, "return": ret, "payoff": payoff,
-                "sum_ev": round(sum(c["ev"] for c in chosen), 2),
-            })
-            for c in chosen:
-                bet_details.append({
-                    "prob": c["prob"], "odds": c["odds"], "ev": c["ev"],
-                    "hit": 1 if c["bet"] == result_combo else 0,
-                    "investment": bet_amt,
-                    "return": payoff*(bet_amt/100.0) if c["bet"] == result_combo else 0,
-                })
-            if idx % 30 == 0 or idx == len(race_keys)-1:
-                prog.progress((idx+1)/len(race_keys))
-
-        if not records:
-            st.error("結果が空でした。"); st.stop()
-        res = pd.DataFrame(records)
-        bet_races = res[res["n_bets"] > 0]
-        skip_races = res[res["n_bets"] == 0]
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("対象", f"{len(res):,}")
-        c2.metric("買った", f"{len(bet_races):,}", f"見送り {len(skip_races):,}")
-        if len(bet_races) > 0:
-            tot_inv = bet_races["investment"].sum()
-            tot_ret = bet_races["return"].sum()
-            hit_rate = bet_races["hit"].sum() / len(bet_races) * 100
-            ret_rate = tot_ret/tot_inv*100 if tot_inv>0 else 0
-            c3.metric("回収率", f"{ret_rate:.1f}%",
-                      f"投資{int(tot_inv):,} / 回収{int(tot_ret):,}円")
-            c4.metric("的中率", f"{hit_rate:.1f}%",
-                      f"{int(bet_races['hit'].sum())}/{len(bet_races)}")
-            if ret_rate >= 100:
-                st.success(f"🎉 回収率 {ret_rate:.1f}% — 理論プラス。標本{len(bet_races)}本での結果なので追加検証必須。")
-            elif ret_rate >= 85:
-                st.info(f"回収率 {ret_rate:.1f}% — 控除率の壁は超えたが100%未満。設定を細かく動かして探索を。")
-            else:
-                st.warning(f"回収率 {ret_rate:.1f}% — 控除率の壁未満。EV閾値を上げる、Nを下げる等を試してください。")
-
-        st.markdown("---")
-
-        # EV帯別マトリクス
-        if bet_details:
-            st.subheader("📈 EV帯別の回収率（買い目1点ごと）")
-            bd = pd.DataFrame(bet_details)
-            ev_bins = [1.0, 1.1, 1.2, 1.3, 1.5, 2.0, 3.0, 99]
-            bd["ev_band"] = pd.cut(bd["ev"], bins=ev_bins, right=False,
-                                     labels=[f"{ev_bins[i]:.1f}-{ev_bins[i+1]:.1f}" for i in range(len(ev_bins)-1)])
-            rows = []
-            for band, g in bd.groupby("ev_band"):
-                if len(g)==0: continue
-                inv = g["investment"].sum(); ret = g["return"].sum()
-                rows.append({
-                    "EV帯": band,
-                    "買い目数": len(g),
-                    "的中": int(g["hit"].sum()),
-                    "的中率(%)": round(g["hit"].mean()*100, 2),
-                    "投資": int(inv),
-                    "回収": int(ret),
-                    "回収率(%)": round(ret/inv*100, 1) if inv>0 else 0,
-                })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
-            st.caption("単調にEVが高いほど回収率が高い帯域構造が理想。歪みがあれば確率が過大評価。")
-
-        st.markdown("---")
-        st.subheader("📋 レース別結果")
-        st.dataframe(res, use_container_width=True)
-
-# ----------------------------- Tab2
-with tab2:
-    st.markdown("##### 1レースを取得 → v22モデルでEV判定")
-    cA, cB, cC = st.columns(3)
-    with cA: d_input = st.date_input("日付", value=datetime.now(JST).date())
-    with cB: v_idx = st.selectbox("場", options=list(JCD_NAME.keys()), format_func=lambda x: JCD_NAME[x])
-    with cC: r_idx = st.selectbox("R", options=list(range(1, 13)))
-
-    if st.button("🔍 取得して予想", type="primary", use_container_width=True):
-        dstr = d_input.strftime("%Y%m%d")
-        with st.spinner("取得中..."):
-            res = fetch_race_data(dstr, v_idx, r_idx)
-            time.sleep(1.0)
-        if not res:
-            st.error("取得失敗"); st.stop()
-        racers, lane_to_rank, odds_map, payoff = res
-        st.subheader("出走表")
-        df_show = pd.DataFrame(racers)[["lane","cls_val","age","avg_st","n_win","m_2ren","tenji","course_in"]]
-        df_show.columns = ["枠","級","年齢","平均ST","勝率","M2連率","展示","コースIN"]
-        st.dataframe(df_show.set_index("枠"), use_container_width=True)
-        st.caption(f"オッズ取得: {len(odds_map)}/120")
-
-        feat_df = make_race_features(racers)
-        combo_probs = predict_combo_probs(feat_df, v_idx)
-
-        if odds_map:
-            chosen = select_bets_by_ev(combo_probs, odds_map, ev_th, top_n_prob, max_bets)
-            st.subheader(f"🎯 採用買い目 (EV≥{ev_th}, 確率上位{top_n_prob}点から選定, 最大{max_bets}点)")
-            if chosen:
-                df_b = pd.DataFrame([{
-                    "買い目": c["bet"],
-                    "予想確率(%)": round(c["prob"]*100, 2),
-                    "オッズ": round(c["odds"], 1),
-                    "EV": round(c["ev"], 3),
-                } for c in chosen])
-                st.dataframe(df_b.set_index("買い目"), use_container_width=True)
-                st.code(",".join(c["bet"] for c in chosen))
-                if payoff and lane_to_rank:
-                    r1 = next((l for l,r in lane_to_rank.items() if r==1), None)
-                    r2 = next((l for l,r in lane_to_rank.items() if r==2), None)
-                    r3 = next((l for l,r in lane_to_rank.items() if r==3), None)
-                    if r1 and r2 and r3:
-                        result = f"{r1}-{r2}-{r3}"
-                        buys = [c["bet"] for c in chosen]
-                        hit = result in buys
-                        inv = len(buys)*bet_amt
-                        ret = payoff*(bet_amt/100.0) if hit else 0
-                        st.success(f"結果: {result} ({payoff}円) — {'🎯 的中' if hit else '❌ 外れ'} "
-                                   f"投資 {inv:,} / 回収 {int(ret):,}円")
-            else:
-                st.info("条件を満たす買い目なし → 見送り")
-
-        st.subheader("📊 確率上位 (参考)")
-        top = sorted(combo_probs.items(), key=lambda x: x[1], reverse=True)[:15]
-        df_top = pd.DataFrame([{"買い目":k, "予想確率(%)":round(v*100,2),
-                                 "オッズ":odds_map.get(k,0), "EV":round(v*odds_map.get(k,0),3)}
-                                for k,v in top])
-        st.dataframe(df_top.set_index("買い目"), use_container_width=True)
+           
