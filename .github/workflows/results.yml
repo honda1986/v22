@@ -1,0 +1,44 @@
+name: 結果収集
+on:
+  schedule:
+    - cron: '30 14 * * *'   # JST 23:30
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '対象日 YYYYMMDD(空欄=本日)'
+        required: false
+        default: ''
+concurrency:
+  group: kyotei-write
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  results:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: 依存インストール
+        run: pip install -r requirements.txt
+      - name: 結果収集
+        run: python results.py ${{ github.event.inputs.date }}
+      - name: コミット
+        if: always()
+        run: |
+          git config user.name "boat-bot"
+          git config user.email "actions@github.com"
+          git add history.json stats.json
+          git diff --cached --quiet && echo "変更なし" && exit 0
+          git commit -m "results: 結果を更新"
+          for i in 1 2 3 4 5 6; do
+            if git pull --rebase --autostash origin main && git push; then
+              echo "push成功 (試行 $i)"; exit 0
+            fi
+            echo "競合のためリトライ $i/6"; sleep 6
+          done
+          exit 1
