@@ -1,0 +1,50 @@
+name: オッズ更新
+on:
+  schedule:
+    # 開催時間帯(JST 10:00〜21:50)に10分おき。UTCは-9時間なので 01:00〜12:50。
+    - cron: '*/10 1-12 * * *'
+  workflow_dispatch:
+    inputs:
+      all:
+        description: '締切済みも含めて全レース更新する場合は all と入力'
+        required: false
+        default: ''
+concurrency:
+  group: kyotei-write
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  odds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: 依存インストール
+        run: pip install requests beautifulsoup4
+      - name: オッズ更新
+        run: |
+          if [ "${{ github.event.inputs.all }}" = "all" ]; then
+            python odds_update.py --all
+          else
+            python odds_update.py
+          fi
+      - name: コミット
+        if: always()
+        run: |
+          git config user.name "boat-bot"
+          git config user.email "actions@github.com"
+          git add races.json
+          git diff --cached --quiet && echo "変更なし" && exit 0
+          git commit -m "odds: オッズとEVを更新"
+          for i in 1 2 3 4 5 6; do
+            if git pull --rebase --autostash origin main && git push; then
+              echo "push成功 (試行 $i)"; exit 0
+            fi
+            echo "競合のためリトライ $i/6"; sleep 6
+          done
+          exit 1
