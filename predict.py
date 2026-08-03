@@ -567,11 +567,15 @@ def process_race(date: str, jcd: int, rno: int, close: str) -> Optional[Dict]:
                    "tenji": r["tenji"], "course": r["course_in"], "st": r.get("tenji_st", "")}
                   for r in rows],
         "eval": boat_eval(combos),
+        # オッズ更新時に買い目を選び直せるよう、確率上位の組番を保存しておく。
+        # (オッズが動くと、前回は外れていた組番が条件を満たすことがあるため)
+        "probs": {c: round(p, 6) for c, p in sorted(combos.items(), key=lambda kv: -kv[1])[:TOP_N_PROB * 2]},
         "buys": buys,
         "points": len(buys),
         "hitProb": round(hit_p, 1),          # 買い目のどれかが当たる確率(%)
         "evTotal": round(ev_sum / len(buys), 2) if buys else 0,
         "oddsCount": len(odds),
+        "oddsAt": datetime.now(JST).isoformat(),
         "weather": bi.get("weather", {}),
         "src": src,
     }

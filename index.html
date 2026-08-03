@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>競艇予想 v22</title>
+<style>
+  :root{
+    --bg:#0B1113; --card:#111A1D; --line:#26363B; --ink:#EAF2EF; --sub:#8CA3A0;
+    --dim:#5E7573; --accent:#F2C230; --good:#5FC08B; --bad:#E4726B; --blue:#5AA9E6;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+       font-size:14px;line-height:1.6;padding-bottom:40px}
+  header{padding:16px 14px 12px;border-bottom:1px solid var(--line);background:#0D1518;position:sticky;top:0;z-index:10}
+  .brand{font-size:10px;letter-spacing:.22em;color:var(--accent);font-weight:700}
+  h1{font-size:20px;margin:2px 0 4px;font-weight:900}
+  .lead{font-size:11px;color:var(--sub);margin:0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:12px 10px;padding:14px}
+  h2{font-size:15px;margin:0 0 8px;color:var(--accent);font-weight:900}
+  h3{font-size:12px;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line);font-weight:900}
+  .note{font-size:11px;color:var(--sub);margin:0 0 8px}
+  .tiny{font-size:10px;color:var(--dim)}
+  button{background:#162226;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+         padding:9px 12px;font-size:13px;font-weight:700;font-family:inherit}
+  button:active{background:#1D2C31}
+  .btns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .race{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#0F1719}
+  .race.hit{border-color:var(--good);background:rgba(95,192,139,.07)}
+  .race.miss{background:#0C1214}
+  .rhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}
+  .clock{font-size:19px;font-weight:900;color:var(--accent);font-variant-numeric:tabular-nums}
+  .clock.done{color:var(--dim)}
+  .venue{font-weight:700;margin-left:6px}
+  .meta{font-size:11px;color:var(--sub);margin-bottom:5px}
+  .combo{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:3px 8px;
+         margin:0 5px 5px 0;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+  .combo b{color:var(--accent);font-weight:900;font-size:10px;margin-left:4px}
+  .combo.win{border-color:var(--good);background:rgba(95,192,139,.18)}
+  .res{margin-top:6px;padding:6px 8px;border-radius:6px;font-size:12px}
+  .res.ok{background:rgba(95,192,139,.12)}
+  .res.ng{background:rgba(228,114,107,.10)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:5px 4px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th{color:var(--sub);font-weight:700;font-size:11px}
+  th.l,td.l{text-align:left}
+  .vhead{background:#1C282C;color:var(--accent);font-weight:900;font-size:11px;cursor:pointer}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+  .chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:11px}
+  .hidden{display:none}
+  .bar{height:5px;background:#1C282C;border-radius:3px;overflow:hidden;margin-top:3px}
+  .bar>i{display:block;height:100%;background:var(--accent)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">KYOTEI PREDICTION v22</div>
+  <h1>競艇予想</h1>
+  <p class="lead">学習モデル(LightGBM)の予想を自動更新。締切時間順に買い目を表示します。</p>
+</header>
+
+<section class="card" id="shoubuCard" style="border-color:var(--good)">
+  <h2 style="color:var(--good)">🔥 本日の勝負レース(締切時間順)</h2>
+  <p class="note">期待値(確率×オッズ)が基準を超えた買い目があるレースだけを並べています。</p>
+  <p class="tiny" style="margin:0 0 8px">用語: <b>EV</b>=期待値(1.0で収支トントン) / <b>的中率</b>=買い目のどれかが当たる確率 / <b>締切</b>=投票締切時刻</p>
+  <div class="btns">
+    <button id="reload">🔄 最新に更新</button>
+    <button id="toggleDone">終了レースを隠す</button>
+  </div>
+  <div id="oddsAge" class="tiny" style="margin-bottom:8px"></div>
+  <div id="shoubuList"><p class="note" id="shoubuEmpty">読み込み中...</p></div>
+</section>
+
+<section class="card">
+  <h2>🔍 全レース一覧</h2>
+  <div class="btns">
+    <button class="fBtn" data-f="buy">買い目あり</button>
+    <button class="fBtn" data-f="hit">🎯 的中のみ</button>
+    <button class="fBtn" data-f="all">すべて</button>
+    <button id="foldAll" style="margin-left:auto">場を全部たたむ</button>
+  </div>
+  <div style="overflow-x:auto">
+    <table><thead><tr>
+      <th class="l">レース</th><th class="l">締切</th><th>本命</th><th>1着率</th><th>点数</th><th>EV</th><th class="l">結果</th>
+    </tr></thead><tbody id="allBody"><tr><td colspan="7" class="l" style="color:var(--dim)">読み込み中...</td></tr></tbody></table>
+  </div>
+  <p class="tiny" style="margin-top:8px">本命=評価が最も高い艇。1着率はモデルの推定値です。結果欄は確定後に表示され、🎯=買い目的中です。</p>
+</section>
+
+<section class="card">
+  <h2>📈 成績</h2>
+  <p class="note">毎晩、結果と予想を突き合わせて自動集計します。</p>
+  <div id="statsBox"><p class="note">読み込み中...</p></div>
+</section>
+
+<p class="tiny" style="margin:14px 12px 0">予想は学習モデルによる参考情報であり的中を保証するものではありません。舟券の購入は20歳から、余裕資金の範囲でお楽しみください。</p>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const col = (v, base) => v >= base ? "var(--good)" : "var(--bad)";
+
+let RACES = [], RESULTS = {}, STATS = null, ODDS_AT = null;
+let listFilter = "buy", hideDone = false;
+const folded = new Set();
+
+function nowHM() {
+  const d = new Date(Date.now() + 9 * 3600 * 1000);
+  return d.toISOString().slice(11, 16);
+}
+const isDone = (r) => (r.close || "") && r.close < nowHM();
+
+// オッズは締切まで動き続けるため、いつ取得したものかを常に示す。
+// 古いオッズのままEVを信じると期待値がずれるので、鮮度で色を変えて警告する。
+function minutesSince(iso) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (isNaN(t)) return null;
+  return Math.max(0, Math.round((Date.now() - t) / 60000));
+}
+function ageLabel(min) {
+  if (min == null) return { text: "取得時刻不明", color: "var(--dim)" };
+  if (min < 15) return { text: min + "分前", color: "var(--good)" };
+  if (min < 40) return { text: min + "分前", color: "var(--accent)" };
+  return { text: min + "分前(古い)", color: "var(--bad)" };
+}
+function renderOddsAge() {
+  const box = $("oddsAge");
+  if (!box) return;
+  const m = minutesSince(ODDS_AT);
+  const a = ageLabel(m);
+  box.innerHTML = 'オッズ更新: <b style="color:' + a.color + '">' + a.text + "</b>" +
+    (m != null && m >= 40 ? ' — 締切直前のオッズと差がある可能性があります' : "");
+}
+
+// ---------- 勝負レース ----------
+function renderShoubu() {
+  const box = $("shoubuList");
+  let rows = RACES.filter((r) => (r.buys || []).length);
+  if (hideDone) rows = rows.filter((r) => !isDone(r) || RESULTS[r.key]);
+  if (!rows.length) {
+    box.innerHTML = '<p class="note">条件に合う勝負レースは今のところありません。</p>';
+    return;
+  }
+  // 確定分の集計
+  const done = rows.filter((r) => RESULTS[r.key]);
+  let sum = "";
+  if (done.length) {
+    let cost = 0, ret = 0, hit = 0;
+    for (const r of done) {
+      const res = RESULTS[r.key];
+      cost += r.buys.length * 100;
+      if (res.combo && r.buys.some((b) => b.combo === res.combo)) { hit++; ret += res.pay || 0; }
+    }
+    const roi = cost ? ret / cost * 100 : 0;
+    sum = '<div class="meta" style="margin-bottom:8px">確定 ' + done.length + "R / 的中" + hit + "R / 回収率 <b style='color:" +
+      col(roi, 100) + "'>" + roi.toFixed(1) + "%</b> / 収支 <b style='color:" + col(ret - cost, 0) + "'>" +
+      (ret - cost >= 0 ? "+" : "") + (ret - cost).toLocaleString() + "円</b></div>";
+  }
+  box.innerHTML = sum + rows.map((r) => {
+    const res = RESULTS[r.key];
+    const hit = res && res.combo && r.buys.some((b) => b.combo === res.combo);
+    const cls = res ? (hit ? "race hit" : "race miss") : "race";
+    const cost = r.buys.length * 100;
+    const combos = r.buys.map((b) =>
+      '<span class="combo' + (res && b.combo === res.combo ? " win" : "") + '">' + esc(b.combo) +
+      "<b>" + b.odds + "倍</b></span>").join("");
+    const resHtml = res
+      ? '<div class="res ' + (hit ? "ok" : "ng") + '">' +
+        (hit ? '<b style="color:var(--good)">✅ 的中</b>' : '<b style="color:var(--bad)">✗ 不的中</b>') +
+        ' <span style="color:var(--sub)">結果 ' + esc(res.combo || "—") + "</span>" +
+        (hit ? ' <b style="color:var(--good)">' + (res.pay || 0).toLocaleString() + "円</b>" : "") +
+        " <span style='color:" + col((res.pay || 0) - cost, 0) + "'>(" +
+        ((res.pay || 0) - cost >= 0 ? "+" : "") + ((res.pay || 0) - cost).toLocaleString() + "円)</span></div>"
+      : '<div class="tiny" style="margin-top:5px">💰 ' + r.buys.length + "点 " + cost + "円 / 平均EV " +
+        r.evTotal + " — EVが1.0を超えるほど期待値プラス</div>";
+    return '<div class="' + cls + '">' +
+      '<div class="rhead"><div><span class="clock' + (isDone(r) ? " done" : "") + '">' + esc(r.close || "--:--") +
+      '</span><span class="venue">' + esc(r.place) + " " + r.rno + "R</span></div>" +
+      '<span style="font-size:11px;color:var(--good);font-weight:700">的中率' + r.hitProb + "%</span></div>" +
+      '<div class="meta">3連単 ' + r.buys.length + "点 / 平均EV " + r.evTotal +
+      (r.src && r.src.tenji ? " / 展示反映済" : "") +
+      (function () { const m = minutesSince(r.oddsAt); if (m == null) return "";
+        const a = ageLabel(m); return ' / オッズ<span style="color:' + a.color + '">' + a.text + "</span>"; })() + "</div>" +
+      "<div>" + combos + "</div>" + resHtml + "</div>";
+  }).join("");
+}
+
+// ---------- 全レース ----------
+function renderAll() {
+  const body = $("allBody");
+  let rows = RACES.slice();
+  if (listFilter === "buy") rows = rows.filter((r) => (r.buys || []).length);
+  if (listFilter === "hit") rows = rows.filter((r) => {
+    const res = RESULTS[r.key];
+    return res && res.combo && (r.buys || []).some((b) => b.combo === res.combo);
+  });
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="7" class="l" style="color:var(--dim)">該当なし</td></tr>';
+    return;
+  }
+  const byVenue = {};
+  for (const r of rows) (byVenue[r.place] = byVenue[r.place] || []).push(r);
+  let html = "";
+  for (const v of Object.keys(byVenue)) {
+    const list = byVenue[v].sort((a, b) => a.rno - b.rno);
+    html += '<tr class="vhead" onclick="toggleVenue(\'' + esc(v) + '\')"><td colspan="7" class="l">' +
+      (folded.has(v) ? "▶ " : "▼ ") + esc(v) + ' <span style="color:var(--sub);font-weight:400">(' + list.length + "R)</span></td></tr>";
+    if (folded.has(v)) continue;
+    for (const r of list) {
+      const top = (r.eval || [])[0] || {};
+      const res = RESULTS[r.key];
+      const buys = r.buys || [];
+      const hit = res && res.combo && buys.some((b) => b.combo === res.combo);
+      // 結果セル: 的中は組番と払戻、不的中は結果の組番、未確定は「—」
+      let resCell = '<span style="color:var(--dim)">—</span>';
+      if (res && res.combo) {
+        resCell = hit
+          ? '<b style="color:var(--good)">✅ ' + esc(res.combo) + " " + (res.pay || 0).toLocaleString() + "円</b>"
+          : '<span style="color:var(--sub)">' + esc(res.combo) + (buys.length ? " ✗" : "") + "</span>";
+      }
+      const trStyle = hit ? ' style="background:rgba(95,192,139,.12)"' : "";
+      html += "<tr" + trStyle + ">" +
+        '<td class="l">' + (hit ? "🎯 " : "") + r.rno + "R</td>" +
+        '<td class="l" style="color:' + (isDone(r) ? "var(--dim)" : "var(--ink)") + '">' + esc(r.close || "—") + "</td>" +
+        "<td><b>" + (top.lane || "—") + "</b></td>" +
+        "<td>" + (top.win != null ? top.win + "%" : "—") + "</td>" +
+        "<td>" + (buys.length || "—") + "</td>" +
+        '<td style="color:' + ((r.evTotal || 0) >= 1 ? "var(--good)" : "var(--dim)") + '">' + (r.evTotal || "—") + "</td>" +
+        '<td class="l" style="font-size:11px">' + resCell + "</td></tr>";
+    }
+  }
+  body.innerHTML = html;
+}
+window.toggleVenue = (v) => { folded.has(v) ? folded.delete(v) : folded.add(v); renderAll(); };
+
+// ---------- 成績 ----------
+function renderStats() {
+  const box = $("statsBox");
+  if (!STATS) { box.innerHTML = '<p class="note">まだ成績データがありません(結果収集の初回実行後に表示されます)。</p>'; return; }
+  const t = STATS.today, o = STATS.overall;
+  let h = "";
+  if (t) {
+    h += '<div style="border-left:3px solid var(--good);padding-left:10px;margin-bottom:10px">' +
+      '<div style="font-weight:900;color:var(--good)">本日 ' + esc(STATS.todayDate || "") + " — " + t.races + "レース</div>" +
+      '<div class="chips"><span class="chip">的中 <b>' + t.hit + '%</b></span>' +
+      '<span class="chip">回収率 <b style="color:' + col(t.roi, 100) + '">' + t.roi + '%</b></span>' +
+      '<span class="chip">収支 <b style="color:' + col(t.profit, 0) + '">' + (t.profit >= 0 ? "+" : "") + t.profit.toLocaleString() + "円</b></span></div></div>";
+  }
+  if (o) {
+    h += '<div class="chips"><span class="chip">累計 <b>' + o.races + '</b>R</span>' +
+      '<span class="chip">的中 <b>' + o.hit + '%</b></span>' +
+      '<span class="chip">回収率 <b style="color:' + col(o.roi, 100) + '">' + o.roi + '%</b></span>' +
+      '<span class="chip">収支 <b style="color:' + col(o.profit, 0) + '">' + (o.profit >= 0 ? "+" : "") + o.profit.toLocaleString() + "円</b></span></div>";
+  }
+  if (STATS.recentDays && STATS.recentDays.length) {
+    h += '<h3>日別成績(直近7日)</h3><div style="overflow-x:auto"><table><thead><tr>' +
+      '<th class="l">日付</th><th>R数</th><th>的中率</th><th>回収率</th><th>収支</th></tr></thead><tbody>' +
+      STATS.recentDays.map((d) => "<tr><td class='l'>" + esc(d.date.slice(4, 6) + "/" + d.date.slice(6, 8)) + "</td>" +
+        "<td>" + d.races + "</td><td>" + d.hit + "%</td>" +
+        "<td style='font-weight:700;color:" + col(d.roi, 100) + "'>" + d.roi + "%</td>" +
+        "<td style='color:" + col(d.profit, 0) + "'>" + (d.profit >= 0 ? "+" : "") + (d.profit / 1000).toFixed(1) + "k</td></tr>").join("") +
+      "</tbody></table></div>";
+  }
+  h += '<p class="tiny" style="margin-top:8px">更新 ' + esc((STATS.updatedAt || "").replace("T", " ").slice(0, 19)) + "</p>";
+  box.innerHTML = h;
+}
+
+// ---------- 読み込み ----------
+async function loadAll() {
+  try {
+    const r = await fetch("./races.json?" + Date.now(), { cache: "no-store" });
+    if (r.ok) {
+      const d = await r.json();
+      RACES = d.races || [];
+      ODDS_AT = d.oddsUpdatedAt || d.updatedAt || null;
+      $("shoubuEmpty") && $("shoubuEmpty").remove();
+    }
+  } catch (e) { $("shoubuList").innerHTML = '<p class="note">races.json を読み込めませんでした。</p>'; }
+  try {
+    const r = await fetch("./stats.json?" + Date.now(), { cache: "no-store" });
+    if (r.ok) {
+      STATS = await r.json();
+      for (const x of (STATS.todayRaces || [])) RESULTS[x.key] = x;
+    }
+  } catch (e) {}
+  renderOddsAge(); renderShoubu(); renderAll(); renderStats();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  $("reload").addEventListener("click", loadAll);
+  $("toggleDone").addEventListener("click", (e) => {
+    hideDone = !hideDone;
+    e.target.textContent = hideDone ? "終了レースも表示" : "終了レースを隠す";
+    renderShoubu();
+  });
+  document.querySelectorAll(".fBtn").forEach((b) => b.addEventListener("click", () => {
+    listFilter = b.dataset.f;
+    document.querySelectorAll(".fBtn").forEach((x) => {
+      const on = x.dataset.f === listFilter;
+      x.style.borderColor = on ? "var(--accent)" : "";
+      x.style.color = on ? "var(--accent)" : "";
+    });
+    renderAll();
+  }));
+  $("foldAll").addEventListener("click", (e) => {
+    const vs = [...new Set(RACES.map((r) => r.place))];
+    if (folded.size) { folded.clear(); e.target.textContent = "場を全部たたむ"; }
+    else { vs.forEach((v) => folded.add(v)); e.target.textContent = "場を全部ひらく"; }
+    renderAll();
+  });
+  loadAll();
+  setInterval(() => { renderOddsAge(); renderShoubu(); }, 60000); // 締切の経過表示を1分ごとに更新
+});
+</script>
+</body>
+</html>
