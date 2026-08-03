@@ -1,0 +1,55 @@
+name: 買い目条件の検証
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: '使うレース数の上限(空で全部。動作確認は2000)'
+        required: false
+        default: ''
+      verify:
+        description: 'predict.py本体との照合レース数'
+        required: false
+        default: '100'
+
+concurrency:
+  group: kyotei-write
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 依存インストール
+        run: pip install -r requirements.txt
+
+      - name: 分析
+        run: |
+          ARG=""
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            ARG="--limit ${{ github.event.inputs.limit }}"
+          fi
+          python analyze.py --verify ${{ github.event.inputs.verify }} $ARG
+
+      - name: コミット
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add analysis.md
+          git diff --cached --quiet && echo "変更なし" && exit 0
+          git commit -m "analyze: 買い目条件の検証結果"
+          for i in 1 2 3 4 5; do
+            git pull --rebase --autostash && git push && exit 0
+            echo "push失敗 リトライ $i"; sleep 10
+          done
+          exit 1
