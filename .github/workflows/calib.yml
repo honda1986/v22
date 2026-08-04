@@ -11,6 +11,10 @@ on:
         description: '推定と検証の境目 YYYYMMDD'
         required: false
         default: '20250430'
+      course:
+        description: '進入コース raw=そのまま / lane=枠なりに固定(漏れを消す)'
+        required: false
+        default: 'lane'
       reverse:
         description: '推定と検証を入れ替える(true で 2026年で推定 → 2024-25で検証)'
         required: false
@@ -50,6 +54,7 @@ jobs:
           if [ "${{ github.event.inputs.reverse }}" = "true" ]; then
             ARG="$ARG --reverse"
           fi
+          ARG="$ARG --course ${{ github.event.inputs.course }}"
           python calib.py $ARG
       - name: コミット
         run: |
