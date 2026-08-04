@@ -3,22 +3,24 @@
 """
 ohdokei.py -- 「大時計」アプリのデータを作る
 
-■ 考え方
-  135,327レースの検証で分かったこと:
-    ・自作モデルは市場を超えない(必要な優位の1%しか無い)
-    ・したがって最良の確率推定は市場そのもの
-    ・ただし市場には偏りがあり、本命は過小評価・穴は買われすぎ
+■ 買い方 (132,219レースの実測で決定)
+    オッズ6倍以下の組が「ちょうど2点」あるレースだけ買う。その2点を買う。
 
-  なので予想はしない。人気順の上位N点を買い、
-  実測したオッズ帯別の回収率から、買う前に正直な数字を出す。
+    2点  8,071レース  回収率 86.7% ± 1.3%
+         年度別 84.1 / 87.2 / 90.6 / 89.8%  (4年度とも土台84.0%を上回る)
+    1点 21,233レース  82.3%
+    3点    407レース  77.2%
 
-■ 較正表(26,957レースの実測)
-  オッズ帯ごとの実測回収率。理論値は控除率25%なので75%。
-  ここから 実確率 = 実測回収率 / オッズ が出る。
-  期待回収率は、選んだ買い目の帯別回収率の平均そのもの。
+    買えるのは全体の6.1%。1日8〜9レース。1レース200円。
+
+  予想はしない。自作モデルは市場を超えないと13.5万レースで確認済み。
+  市場が2つの決着に金を集中させているレースだけを拾う、という買い方。
 
 ■ 出力
-  ohdokei/data.json  (静的ページが読む)
+  ohdokei/data.json
+
+■ 通知 (任意)
+  環境変数 NTFY_TOPIC を設定すると、確定した買い目を ntfy で通知する。
 """
 
 import argparse
@@ -48,26 +50,25 @@ COMBOS = [f"{a}-{b}-{c}"
           for c in range(1, 7) if c != a and c != b]
 CIX = {c: i for i, c in enumerate(COMBOS)}
 
-# オッズ帯ごとの実測回収率 (下限, 上限, 実測回収率)
-# 2026-01〜08 の26,957レース、320万点から測定
-CALIB = [(1, 5, 0.869), (5, 10, 0.797), (10, 20, 0.799), (20, 40, 0.746),
-         (40, 80, 0.755), (80, 160, 0.735), (160, 400, 0.669), (400, 1e9, 0.274)]
+# 132,219レースの実測。オッズ帯ごとの回収率。
+CALIB = [(1, 3.5, 0.824), (3.5, 4, 0.890), (4, 5, 0.839), (5, 6, 0.841),
+         (6, 8, 0.809), (8, 10, 0.785), (10, 13, 0.769), (13, 16, 0.789),
+         (16, 20, 0.800), (20, 30, 0.765), (30, 50, 0.764), (50, 100, 0.731),
+         (100, 1e9, 0.481)]
+
+MAX_ODDS = 6.0        # この倍率以下を数える
+NEED = 2              # ちょうど何点あれば買うか
+FIRM_MIN = 16         # 締切これ以下で取ったオッズを「確定」とする
 
 
 def band_roi(o):
     for lo, hi, v in CALIB:
         if lo <= o < hi:
             return v
-    return 0.274
+    return 0.481
 
 
 # ---------------------------------------------------------------- 取得
-def make_session():
-    s = requests.Session()
-    s.headers.update(UA)
-    return s
-
-
 def get(sess, page, **params):
     r = sess.get(f"{BASE}/{page}", params=params, timeout=25)
     r.raise_for_status()
@@ -105,7 +106,6 @@ def parse_odds3t(html):
 
 
 def parse_schedule(html):
-    """締切予定時刻の行から12レース分の時刻"""
     soup = BeautifulSoup(html, "html.parser")
     for tr in soup.find_all("tr"):
         if "締切予定時刻" not in tr.get_text():
@@ -117,7 +117,6 @@ def parse_schedule(html):
 
 
 def parse_resultlist(html):
-    """場×日の結果一覧から3連単の組番と払戻"""
     soup = BeautifulSoup(html, "html.parser")
     out = {}
     for tr in soup.find_all("tr"):
@@ -141,49 +140,75 @@ def parse_resultlist(html):
 
 
 # ---------------------------------------------------------------- 買い目
-def build_picks(odds, n_points):
-    """人気順(オッズの安い順)に n_points 点。較正済みの確率と期待回収率を付ける。"""
-    order = sorted(range(120), key=lambda i: odds[i])[:n_points]
+def build_picks(odds):
+    """6倍以下がちょうど2点のときだけ買う。それ以外は見送り。"""
+    sel = [i for i in range(120) if odds[i] <= MAX_ODDS]
+    if len(sel) != NEED:
+        return None, len(sel)
+    sel.sort(key=lambda i: odds[i])
     pts, hit, roi = [], 0.0, 0.0
-    for i in order:
+    for i in sel:
         o = odds[i]
         r = band_roi(o)
-        p = r / o                      # 実測回収率 ÷ オッズ = 実確率
+        p = r / o
         pts.append({"c": COMBOS[i], "o": round(o, 1), "p": round(p, 4)})
         hit += p
         roi += r
     pays = [p["o"] * 100 for p in pts]
-    return {"points": pts,
-            "hit_rate": round(hit, 4),
-            "exp_roi": round(roi / len(pts), 4),
-            "pay_lo": int(min(pays)), "pay_hi": int(max(pays))}
+    return {"points": pts, "hit_rate": round(hit, 4),
+            "exp_roi": round(roi / len(pts), 4), "stake": len(pts) * 100,
+            "pay_lo": int(min(pays)), "pay_hi": int(max(pays))}, len(sel)
+
+
+# ---------------------------------------------------------------- 通知
+def notify(topic, rec, app_url):
+    if not topic:
+        return False
+    buys = "  ".join(f"{p['c']} {p['o']:.1f}倍" for p in rec["points"])
+    body = (f"{buys}\n"
+            f"的中率 {rec['hit_rate']*100:.0f}%  "
+            f"期待回収率 {rec['exp_roi']*100:.0f}%\n"
+            f"{rec['stake']}円 → 平均 {int(rec['stake']*rec['exp_roi'])}円")
+    payload = {"topic": topic,
+               "title": f"{rec['venue']} {rec['rno']}R  {rec['close']}締切",
+               "message": body, "priority": 4, "tags": ["speedboat"]}
+    if app_url:
+        payload["click"] = app_url
+    try:
+        r = requests.post("https://ntfy.sh", json=payload, timeout=10)
+        return r.status_code < 300
+    except requests.RequestException:
+        return False
 
 
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="ohdokei/data.json")
-    ap.add_argument("--points", type=int, default=6)
-    ap.add_argument("--window", type=int, default=40, help="締切まで何分先まで拾うか")
-    ap.add_argument("--max-odds", type=int, default=10, help="1回で取るオッズの上限件数")
+    ap.add_argument("--window", type=int, default=120,
+                    help="締切まで何分先のレースまで出すか")
+    ap.add_argument("--scan", type=int, default=14, help="1回で調べる上限")
+    ap.add_argument("--app-url", default="", help="通知タップで開くURL")
     args = ap.parse_args()
 
     now = datetime.now(JST)
     today = now.strftime("%Y%m%d")
-    sess = make_session()
+    topic = os.environ.get("NTFY_TOPIC", "").strip()
+    sess = requests.Session()
+    sess.headers.update(UA)
 
-    # 既存データ(同じ日なら引き継ぐ)
-    data = {"date": today, "points": args.points, "venues": {}, "races": {}}
+    data = {"date": today, "rule": {"max_odds": MAX_ODDS, "need": NEED},
+            "venues": {}, "races": {}}
     if os.path.exists(args.out):
         try:
             old = json.load(open(args.out, encoding="utf-8"))
             if old.get("date") == today:
                 data = old
-                data["points"] = args.points
+                data["rule"] = {"max_odds": MAX_ODDS, "need": NEED}
         except Exception:
             pass
 
-    # 1) 今日の開催と締切時刻(1日1回だけ)
+    # 1) 今日の開催と締切時刻
     if not data["venues"]:
         print("今日の開催を調べます")
         for jcd in range(1, 25):
@@ -198,7 +223,14 @@ def main():
         if not data["venues"]:
             print("本日の開催はありません")
 
-    # 2) 締切が近いレースのオッズを取る
+    # 2) オッズを取り直すレースを選ぶ
+    def stale_limit(mins):
+        if mins > 45:
+            return 30          # まだ先 → 30分に1回
+        if mins > FIRM_MIN:
+            return 14          # 近い → 14分に1回
+        return 7               # 直前 → 7分に1回
+
     targets = []
     for jcd_s, times in data["venues"].items():
         jcd = int(jcd_s)
@@ -207,12 +239,17 @@ def main():
             hh, mm = (int(x) for x in t.split(":"))
             close = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
             mins = (close - now).total_seconds() / 60
-            if 2 < mins <= args.window:
+            if not (2 < mins <= args.window):
+                continue
+            prev = data["races"].get(key)
+            age = (time.time() - prev["fetched"]) / 60 if prev else 1e9
+            if age >= stale_limit(mins):
                 targets.append((mins, jcd, rno, key, t))
     targets.sort()
-    print(f"\n締切{args.window}分以内のレース {len(targets)}件")
+    print(f"\n締切{args.window}分以内で取り直すレース {len(targets)}件")
 
-    for mins, jcd, rno, key, t in targets[:args.max_odds]:
+    sent = 0
+    for mins, jcd, rno, key, t in targets[:args.scan]:
         try:
             odds = parse_odds3t(get(sess, "odds3t", rno=rno,
                                     jcd=f"{jcd:02d}", hd=today))
@@ -221,15 +258,40 @@ def main():
             continue
         if not odds:
             continue
-        rec = build_picks(odds, args.points)
-        rec.update({"jcd": jcd, "venue": VENUE[jcd], "rno": rno, "close": t,
-                    "odds_at": now.strftime("%H:%M"),
-                    "result": data["races"].get(key, {}).get("result")})
-        data["races"][key] = rec
-        print(f"  {VENUE[jcd]}{rno}R {t}締切  的中率{rec['hit_rate']*100:.0f}%  "
-              f"回収率{rec['exp_roi']*100:.0f}%", flush=True)
+        rec, n_cheap = build_picks(odds)
+        prev = data["races"].get(key, {})
 
-    # 3) 終わったレースの結果を入れる
+        if rec is None:
+            if prev.get("notified"):
+                prev["dropped"] = True
+                prev["fetched"] = time.time()
+                prev["n_cheap"] = n_cheap
+                print(f"  {VENUE[jcd]}{rno}R 条件から外れました({n_cheap}点)")
+            else:
+                data["races"].pop(key, None)
+            continue
+
+        firm = mins <= FIRM_MIN
+        rec.update({"jcd": jcd, "venue": VENUE[jcd], "rno": rno, "close": t,
+                    "odds_at": now.strftime("%H:%M"), "fetched": time.time(),
+                    "firm": firm, "n_cheap": n_cheap, "dropped": False,
+                    "notified": prev.get("notified", False),
+                    "result": prev.get("result")})
+        data["races"][key] = rec
+        mark = "確定" if firm else "暫定"
+        print(f"  {VENUE[jcd]}{rno}R {t}締切 [{mark}] "
+              f"{rec['points'][0]['c']} {rec['points'][0]['o']}倍 / "
+              f"{rec['points'][1]['c']} {rec['points'][1]['o']}倍  "
+              f"的中率{rec['hit_rate']*100:.0f}%", flush=True)
+
+        if firm and not rec["notified"]:
+            if notify(topic, rec, args.app_url):
+                rec["notified"] = True
+                sent += 1
+    if topic:
+        print(f"通知 {sent}件")
+
+    # 3) 結果を入れる
     need = {}
     for key, r in data["races"].items():
         if r.get("result"):
@@ -252,14 +314,14 @@ def main():
             data["races"][key]["result"] = {
                 "hit": rr["hit"], "pay": rr["pay"],
                 "won": rr["hit"] in picks, "henkan": rr["henkan"]}
-            mark = "的中" if rr["hit"] in picks else "不的中"
-            print(f"  結果 {VENUE[jcd]}{rno}R {rr['hit']} {mark}")
+            print(f"  結果 {VENUE[jcd]}{rno}R {rr['hit']} "
+                  f"{'的中' if rr['hit'] in picks else '不的中'}")
 
     data["updated"] = now.strftime("%Y-%m-%d %H:%M")
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
-    print(f"\n{args.out} を更新しました (レース{len(data['races'])}件)")
+    print(f"\n{args.out} を更新 (レース{len(data['races'])}件)")
 
 
 if __name__ == "__main__":
