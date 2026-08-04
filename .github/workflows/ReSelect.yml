@@ -32,7 +32,7 @@ permissions:
   contents: write
 
 jobs:
-  select:
+  raceselect:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -51,7 +51,7 @@ jobs:
           if [ -n "${{ github.event.inputs.to }}" ]; then
             ARG="$ARG --to ${{ github.event.inputs.to }}"
           fi
-          python select.py $ARG \
+          python raceselect.py $ARG \
             --ev-min ${{ github.event.inputs.ev_min }} \
             --top-n ${{ github.event.inputs.top_n }} \
             --max-points ${{ github.event.inputs.max_points }}
@@ -60,9 +60,9 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add select.md
+          git add raceselect.md
           git diff --cached --quiet && echo "変更なし" && exit 0
-          git commit -m "select: 勝負レース絞り込みの探索結果"
+          git commit -m "raceselect: 勝負レース絞り込みの探索結果"
           for i in 1 2 3 4 5; do
             git pull --rebase --autostash && git push && exit 0
             echo "push失敗 リトライ $i"; sleep 10
