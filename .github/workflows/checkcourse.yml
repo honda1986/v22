@@ -1,0 +1,34 @@
+name: 進入コースの検証
+
+on:
+  workflow_dispatch:
+    inputs:
+      n:
+        description: '照合レース数(1件につき2ページ叩きます)'
+        required: false
+        default: '200'
+      wait:
+        description: 'リクエスト間隔(秒)。弾かれるなら3に'
+        required: false
+        default: '1.0'
+
+concurrency:
+  group: kyotei-write
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 依存インストール
+        run: pip install requests beautifulsoup4
+      - name: 照合
+        run: |
+          python checkcourse.py \
+            --n ${{ github.event.inputs.n }} \
+            --wait ${{ github.event.inputs.wait }}
