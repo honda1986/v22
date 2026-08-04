@@ -7,6 +7,14 @@ on:
         description: '使うレース数の上限(空で全部。動作確認は2000)'
         required: false
         default: ''
+      from:
+        description: '開始日 YYYYMMDD(学習期間を外すなら 20260501)'
+        required: false
+        default: '20260501'
+      to:
+        description: '終了日 YYYYMMDD(空で最後まで)'
+        required: false
+        default: ''
       verify:
         description: 'predict.py本体との照合レース数'
         required: false
@@ -37,7 +45,13 @@ jobs:
         run: |
           ARG=""
           if [ -n "${{ github.event.inputs.limit }}" ]; then
-            ARG="--limit ${{ github.event.inputs.limit }}"
+            ARG="$ARG --limit ${{ github.event.inputs.limit }}"
+          fi
+          if [ -n "${{ github.event.inputs.from }}" ]; then
+            ARG="$ARG --from ${{ github.event.inputs.from }}"
+          fi
+          if [ -n "${{ github.event.inputs.to }}" ]; then
+            ARG="$ARG --to ${{ github.event.inputs.to }}"
           fi
           python analyze.py --verify ${{ github.event.inputs.verify }} $ARG
 
