@@ -4,9 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       from:
-        description: '開始日 YYYYMMDD(学習期間を外す)'
+        description: '開始日 YYYYMMDD(学習期間 2025-05〜2026-04 は自動で除外)'
         required: false
-        default: '20260501'
+        default: '20240501'
+      split:
+        description: '推定と検証の境目 YYYYMMDD'
+        required: false
+        default: '20250430'
+      reverse:
+        description: '推定と検証を入れ替える(true で 2026年で推定 → 2024-25で検証)'
+        required: false
+        default: 'false'
       to:
         description: '終了日 YYYYMMDD(空で最後まで)'
         required: false
@@ -35,6 +43,12 @@ jobs:
           ARG="--from ${{ github.event.inputs.from }}"
           if [ -n "${{ github.event.inputs.to }}" ]; then
             ARG="$ARG --to ${{ github.event.inputs.to }}"
+          fi
+          if [ -n "${{ github.event.inputs.split }}" ]; then
+            ARG="$ARG --split ${{ github.event.inputs.split }}"
+          fi
+          if [ "${{ github.event.inputs.reverse }}" = "true" ]; then
+            ARG="$ARG --reverse"
           fi
           python calib.py $ARG
       - name: コミット
