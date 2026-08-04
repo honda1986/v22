@@ -1,0 +1,70 @@
+name: 勝負レースの絞り込み
+
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: '開始日 YYYYMMDD(学習期間を外す)'
+        required: false
+        default: '20260501'
+      to:
+        description: '終了日 YYYYMMDD(空で最後まで)'
+        required: false
+        default: ''
+      ev_min:
+        description: 'EVの下限'
+        required: false
+        default: '1.1'
+      top_n:
+        description: '確率上位何点を候補にするか'
+        required: false
+        default: '12'
+      max_points:
+        description: '1レースの最大点数'
+        required: false
+        default: '8'
+
+concurrency:
+  group: kyotei-write
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 依存インストール
+        run: pip install -r requirements.txt
+
+      - name: 絞り込み探索
+        run: |
+          ARG="--from ${{ github.event.inputs.from }}"
+          if [ -n "${{ github.event.inputs.to }}" ]; then
+            ARG="$ARG --to ${{ github.event.inputs.to }}"
+          fi
+          python select.py $ARG \
+            --ev-min ${{ github.event.inputs.ev_min }} \
+            --top-n ${{ github.event.inputs.top_n }} \
+            --max-points ${{ github.event.inputs.max_points }}
+
+      - name: コミット
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add select.md
+          git diff --cached --quiet && echo "変更なし" && exit 0
+          git commit -m "select: 勝負レース絞り込みの探索結果"
+          for i in 1 2 3 4 5; do
+            git pull --rebase --autostash && git push && exit 0
+            echo "push失敗 リトライ $i"; sleep 10
+          done
+          exit 1
