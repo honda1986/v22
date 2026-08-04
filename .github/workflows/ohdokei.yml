@@ -29,7 +29,6 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           python ohdokei.py \
-            --window 120 \
             --scan 14 \
             --app-url "https://honda1986.github.io/v22/ohdokei/" \
             --out ohdokei/data.json
