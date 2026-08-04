@@ -4,9 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       days:
-        description: '直近何日ぶん取るか(90で約1.3万レース)'
+        description: '直近何日ぶん取るか(start/endを使うなら無視される)'
         required: false
         default: '90'
+      start:
+        description: '開始日 YYYYMMDD(古い期間を取るとき)'
+        required: false
+        default: ''
+      end:
+        description: '終了日 YYYYMMDD'
+        required: false
+        default: ''
       workers:
         description: '並列数(10推奨。上げすぎると弾かれる)'
         required: false
@@ -39,8 +47,11 @@ jobs:
 
       - name: 収集
         run: |
-          python backfill.py \
-            --days ${{ github.event.inputs.days }} \
+          RANGE="--days ${{ github.event.inputs.days }}"
+          if [ -n "${{ github.event.inputs.start }}" ] && [ -n "${{ github.event.inputs.end }}" ]; then
+            RANGE="--start ${{ github.event.inputs.start }} --end ${{ github.event.inputs.end }}"
+          fi
+          python backfill.py $RANGE \
             --workers ${{ github.event.inputs.workers }} \
             --minutes ${{ github.event.inputs.minutes }} \
             --out raw
