@@ -6,7 +6,7 @@ on:
       from:
         description: '開始日 YYYYMMDD(学習期間 2025-05〜2026-04 は自動で除外)'
         required: false
-        default: '20240501'
+        default: '20230501'
       split:
         description: '推定と検証の境目 YYYYMMDD'
         required: false
