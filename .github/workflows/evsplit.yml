@@ -1,0 +1,27 @@
+name: 買うレースの絞り込み
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_odds:
+        description: 'このオッズ以下の組があるレースだけを対象にする'
+        required: false
+        default: '5.0'
+
+concurrency:
+  group: kyotei-write
+  cancel-in-progress: false
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 依存インストール
+        run: pip install numpy
+      - name: 探索
+        run: python evsplit.py --out raw --max-odds ${{ github.event.inputs.max_odds }}
