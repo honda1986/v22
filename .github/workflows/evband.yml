@@ -1,0 +1,22 @@
+name: 期待値の測定
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: kyotei-write
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 依存インストール
+        run: pip install numpy
+      - name: 測定
+        run: python evband.py --out raw
