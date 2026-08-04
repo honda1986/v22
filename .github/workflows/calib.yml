@@ -1,0 +1,51 @@
+name: 確率の配合
+
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: '開始日 YYYYMMDD(学習期間を外す)'
+        required: false
+        default: '20260501'
+      to:
+        description: '終了日 YYYYMMDD(空で最後まで)'
+        required: false
+        default: ''
+
+concurrency:
+  group: kyotei-write
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  calib:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 依存インストール
+        run: pip install -r requirements.txt
+      - name: 配合の推定
+        run: |
+          ARG="--from ${{ github.event.inputs.from }}"
+          if [ -n "${{ github.event.inputs.to }}" ]; then
+            ARG="$ARG --to ${{ github.event.inputs.to }}"
+          fi
+          python calib.py $ARG
+      - name: コミット
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add calib.md
+          git diff --cached --quiet && echo "変更なし" && exit 0
+          git commit -m "calib: 確率の配合の推定結果"
+          for i in 1 2 3 4 5; do
+            git pull --rebase --autostash && git push && exit 0
+            echo "push失敗 リトライ $i"; sleep 10
+          done
+          exit 1
