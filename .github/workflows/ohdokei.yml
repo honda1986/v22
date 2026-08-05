@@ -1,14 +1,43 @@
 name: 大時計
 
+# GitHub は高頻度の cron を間引く。1日64回の要求は無視された。
+# そこで「1時間に1回だけ発火させ、その中で56分ループする」形にする。
+# 発火要求は1日18回。predict.yml(1日5回)が動いている水準に近い。
 on:
   workflow_dispatch:
+    inputs:
+      minutes:
+        description: '何分間ループするか(手動確認は 2 くらい)'
+        required: false
+        default: '56'
+      test_notify:
+        description: 'テスト通知だけ送る'
+        type: boolean
+        required: false
+        default: false
   schedule:
-    # JST 07:40〜23:50 を10分おき (UTC は -9時間)
-    - cron: '*/10 22-23,0-15 * * *'
+    - cron: '2 22 * * *'   # JST  7時台
+    - cron: '2 23 * * *'   # JST  8時台
+    - cron: '2 0 * * *'    # JST  9時台
+    - cron: '2 1 * * *'    # JST 10時台
+    - cron: '2 2 * * *'    # JST 11時台
+    - cron: '2 3 * * *'    # JST 12時台
+    - cron: '2 4 * * *'    # JST 13時台
+    - cron: '2 5 * * *'    # JST 14時台
+    - cron: '2 6 * * *'    # JST 15時台
+    - cron: '2 7 * * *'    # JST 16時台
+    - cron: '2 8 * * *'    # JST 17時台
+    - cron: '2 9 * * *'    # JST 18時台
+    - cron: '2 10 * * *'   # JST 19時台
+    - cron: '2 11 * * *'   # JST 20時台
+    - cron: '2 12 * * *'   # JST 21時台
+    - cron: '2 13 * * *'   # JST 22時台
+    - cron: '2 14 * * *'   # JST 23時台
+    - cron: '2 15 * * *'   # JST  0時台
 
 concurrency:
   group: ohdokei
-  cancel-in-progress: false
+  cancel-in-progress: true    # 次の時間が来たら古いループを打ち切る
 
 permissions:
   contents: write
@@ -16,7 +45,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,17 +53,54 @@ jobs:
           python-version: '3.11'
       - name: 依存インストール
         run: pip install requests beautifulsoup4
-      - name: 買い目を作る
+
+      - name: 56分間ループして買い目を作る
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          LOOP_MIN: ${{ github.event.inputs.minutes || '56' }}
+          TESTN: ${{ github.event.inputs.test_notify }}
         run: |
-          python ohdokei.py \
-            --window 120 \
-            --scan 14 \
-            --app-url "https://honda1986.github.io/v22/ohdokei/" \
-            --out ohdokei/data.json
-      - name: コミット
-        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if [ "$TESTN" = "true" ]; then
+            python ohdokei.py --test-notify --out ohdokei/data.json
+            exit $?
+          fi
+
+          END=$(( $(date +%s) + LOOP_MIN * 60 ))
+          N=0
+          while :; do
+            N=$((N+1))
+            T0=$(date +%s)
+            echo "===== 周回 $N  $(TZ=Asia/Tokyo date +%H:%M) ====="
+
+            python ohdokei.py \
+              --scan 20 \
+              --app-url "https://honda1986.github.io/v22/ohdokei/" \
+              --out ohdokei/data.json || echo "この周回は失敗。次に進みます。"
+
+            git add ohdokei/data.json
+            if git diff --cached --quiet; then
+              echo "変更なし"
+            else
+              git commit -m "ohdokei: 更新" -q
+              for i in 1 2 3; do
+                git pull --rebase --autostash -q && git push -q && break
+                echo "push失敗 リトライ $i"; sleep 5
+              done
+            fi
+
+            NOW=$(date +%s)
+            [ $NOW -ge $END ] && break
+            WAIT=$(( 300 - (NOW - T0) ))
+            [ $WAIT -lt 30 ] && WAIT=30
+            REMAIN=$(( END - NOW ))
+            [ $WAIT -gt $REMAIN ] && WAIT=$REMAIN
+            echo "次の周回まで ${WAIT}秒"
+            sleep $WAIT
+          done
+          echo "ループ終了 (${N}周)"        run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ohdokei/data.json
