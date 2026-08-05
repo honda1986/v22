@@ -1,0 +1,27 @@
+name: 得点率の検証
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_runs:
+        description: '何走以上の選手を対象にするか(2=3日目以降)'
+        required: false
+        default: '2'
+
+concurrency:
+  group: kyotei-write
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 依存インストール
+        run: pip install numpy
+      - name: 検証
+        run: python tokuten_analyze.py --min-runs ${{ github.event.inputs.min_runs }}
