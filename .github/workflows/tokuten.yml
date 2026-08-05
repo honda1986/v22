@@ -1,0 +1,76 @@
+name: 得点率の収集
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '何をするか'
+        type: choice
+        options: [probe, check, collect]
+        default: probe
+      date:
+        description: 'check用: 節の途中の日 YYYYMMDD(翌日と比較します)'
+        required: false
+        default: ''
+      jcode:
+        description: 'check用: 場コード(1-24)'
+        required: false
+        default: '12'
+      start:
+        description: 'collect用: 開始日 YYYYMMDD(空=rawの全期間)'
+        required: false
+        default: ''
+      end:
+        description: 'collect用: 終了日 YYYYMMDD'
+        required: false
+        default: ''
+      minutes:
+        description: 'collect用: 打ち切り分数(再実行で続きから)'
+        required: false
+        default: '300'
+
+concurrency:
+  group: kyotei-write
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  tokuten:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 依存インストール
+        run: pip install requests beautifulsoup4
+      - name: 実行
+        run: |
+          case "${{ github.event.inputs.mode }}" in
+            probe)
+              python tokuten.py --probe ;;
+            check)
+              python tokuten.py --check ${{ github.event.inputs.date }} ${{ github.event.inputs.jcode }} ;;
+            collect)
+              ARG="--minutes ${{ github.event.inputs.minutes }}"
+              if [ -n "${{ github.event.inputs.start }}" ]; then
+                ARG="$ARG --start ${{ github.event.inputs.start }} --end ${{ github.event.inputs.end }}"
+              fi
+              python tokuten.py $ARG ;;
+          esac
+      - name: コミット(collectのみ)
+        if: github.event.inputs.mode == 'collect'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tokuten/
+          git diff --cached --quiet && echo "変更なし" && exit 0
+          git commit -m "tokuten: 得点率データ収集"
+          for i in 1 2 3 4 5; do
+            git pull --rebase --autostash && git push && exit 0
+            sleep 8
+          done
+          exit 1
