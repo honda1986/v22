@@ -1,0 +1,39 @@
+name: 得点率の検証(選手別)
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_rows:
+        description: '前期にこの行数以上ある選手だけを対象'
+        required: false
+        default: '40'
+      bd_lo:
+        description: '選手別で使うボーダー帯の下限'
+        required: false
+        default: '5.0'
+      bd_hi:
+        description: '同 上限(広げると1人あたりの行数が増える)'
+        required: false
+        default: '7.0'
+
+concurrency:
+  group: kyotei-write
+  cancel-in-progress: false
+
+jobs:
+  racer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 依存インストール
+        run: pip install numpy
+      - name: 検証
+        run: |
+          python tokuten_racer.py \
+            --min-rows ${{ github.event.inputs.min_rows }} \
+            --bd-lo ${{ github.event.inputs.bd_lo }} \
+            --bd-hi ${{ github.event.inputs.bd_hi }}
