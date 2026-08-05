@@ -3,8 +3,8 @@ name: 大時計
 on:
   workflow_dispatch:
   schedule:
-    # JST 07:40〜23:50 を10分おき (UTC は -9時間
-    - cron: '3,18,33,48 22-23,0-15 * * *'
+    # JST 07:40〜23:50 を10分おき (UTC は -9時間)
+    - cron: '*/10 22-23,0-15 * * *'
 
 concurrency:
   group: ohdokei
@@ -29,6 +29,7 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           python ohdokei.py \
+            --window 120 \
             --scan 14 \
             --app-url "https://honda1986.github.io/v22/ohdokei/" \
             --out ohdokei/data.json
