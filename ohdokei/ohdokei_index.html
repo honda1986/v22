@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#171B22">
+<title>大時計</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ground:#171B22; --panel:#1F242D; --panel2:#252B36;
+  --line:#2E3542; --ink:#EFEDE8; --dim:#8A93A0; --dim2:#5E6672;
+  --signal:#E0362B; --good:#4FB477;
+  --b1:#FFFFFF; --b2:#16181C; --b3:#E5312B; --b4:#2B6BE5; --b5:#F2CE1B; --b6:#2FA84F;
+  --disp:'Barlow Semi Condensed',system-ui,sans-serif;
+  --mono:'Roboto Mono',ui-monospace,monospace;
+  --jp:system-ui,-apple-system,'Hiragino Sans','Noto Sans JP',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--ground); color:var(--ink); font-family:var(--jp);
+  font-size:15px; line-height:1.6; padding-bottom:64px;
+  padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right);
+}
+.wrap{max-width:520px;margin:0 auto;padding:0 16px}
+
+/* ── ヘッダ ── */
+header{
+  display:flex;align-items:baseline;justify-content:space-between;
+  padding:20px 0 12px; border-bottom:1px solid var(--line);
+}
+.mark{font-family:var(--disp);font-weight:700;font-size:26px;letter-spacing:.06em}
+.mark small{font-size:11px;color:var(--dim2);letter-spacing:.18em;
+  display:block;font-weight:500;margin-top:-2px}
+.stamp{font-family:var(--mono);font-size:11px;color:var(--dim2)}
+
+/* ── 大時計 ── */
+.clock{padding:26px 0 22px;text-align:center;border-bottom:1px solid var(--line)}
+.dial{position:relative;width:186px;height:186px;margin:0 auto}
+.dial svg{transform:rotate(-90deg);display:block}
+.dial .track{fill:none;stroke:var(--line);stroke-width:5}
+.dial .arc{fill:none;stroke:var(--ink);stroke-width:5;stroke-linecap:butt;
+  transition:stroke-dashoffset .6s linear,stroke .3s}
+.dial.urgent .arc{stroke:var(--signal)}
+.dial .ticks line{stroke:var(--dim2);stroke-width:1.5}
+.dial .ticks line.major{stroke:var(--dim);stroke-width:2.5}
+.face{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center}
+.remain{font-family:var(--mono);font-weight:700;font-size:38px;
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}
+.dial.urgent .remain{color:var(--signal)}
+.remain span{font-size:15px;color:var(--dim);margin-left:2px;font-weight:400}
+.until{font-size:10px;color:var(--dim2);letter-spacing:.16em;margin-top:6px}
+.where{margin-top:16px;font-family:var(--disp);font-size:23px;font-weight:600;
+  letter-spacing:.02em}
+.where em{font-style:normal;color:var(--dim);font-size:15px;margin-left:6px;
+  font-family:var(--mono)}
+
+/* ── レースカード ── */
+.sec{margin-top:26px}
+.sec h2{font-family:var(--disp);font-size:12px;font-weight:600;letter-spacing:.2em;
+  color:var(--dim2);margin-bottom:10px;text-transform:uppercase}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:3px;
+  padding:14px;margin-bottom:10px}
+.card.next{border-color:#3D4756}
+.chead{display:flex;align-items:baseline;justify-content:space-between;
+  margin-bottom:12px}
+.chead b{font-family:var(--disp);font-size:18px;font-weight:600;letter-spacing:.02em}
+.chead .t{font-family:var(--mono);font-size:13px;color:var(--dim)}
+.tag{font-size:9px;letter-spacing:.14em;padding:2px 6px;border-radius:2px;
+  font-weight:600;margin-left:7px;vertical-align:2px}
+.tag.firm{background:var(--ink);color:var(--ground)}
+.tag.prov{background:transparent;color:var(--dim2);border:1px solid var(--line)}
+.tag.drop{background:#3A2224;color:#D08A88}
+
+/* 買い目チップ(6艇の法定色) */
+.buys{display:flex;flex-wrap:wrap;gap:6px}
+.buy{display:flex;align-items:center;gap:2px;background:var(--panel2);
+  border:1px solid var(--line);border-radius:2px;padding:4px 5px}
+.n{width:17px;height:17px;border-radius:2px;font-family:var(--mono);
+  font-size:11px;font-weight:700;display:grid;place-items:center;color:#101216}
+.n.c1{background:var(--b1)}
+.n.c2{background:var(--b2);color:#E8E8E8;box-shadow:inset 0 0 0 1px #4A505C}
+.n.c3{background:var(--b3);color:#fff}
+.n.c4{background:var(--b4);color:#fff}
+.n.c5{background:var(--b5)}
+.n.c6{background:var(--b6);color:#fff}
+.buy .o{font-family:var(--mono);font-size:11px;color:var(--dim);margin-left:4px}
+
+/* 数字 */
+.stats{display:flex;gap:0;margin-top:13px;border-top:1px solid var(--line);
+  padding-top:11px}
+.stat{flex:1;border-right:1px solid var(--line);padding-right:10px}
+.stat:last-child{border-right:0;padding-right:0}
+.stat .k{font-size:10px;color:var(--dim2);letter-spacing:.1em}
+.stat .v{font-family:var(--mono);font-weight:500;font-size:19px;margin-top:1px;
+  font-variant-numeric:tabular-nums}
+.stat .v.sm{font-size:13px;padding-top:5px}
+
+/* 控除の帯 */
+.gauge{margin-top:11px}
+.gbar{height:5px;background:#2A3038;border-radius:2px;overflow:hidden;display:flex}
+.gbar i{display:block;height:100%}
+.gbar .back{background:var(--ink)}
+.gbar .cut{background:var(--signal);opacity:.45}
+.gnote{font-size:10px;color:var(--dim2);margin-top:5px;font-family:var(--mono)}
+
+/* ボタン */
+.act{display:flex;gap:8px;margin-top:12px}
+button{flex:1;font-family:var(--jp);font-size:13px;font-weight:600;
+  background:transparent;color:var(--ink);border:1px solid var(--line);
+  border-radius:2px;padding:9px;cursor:pointer;transition:.15s}
+button:hover{background:var(--panel2)}
+button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button.on{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+button.ghost{flex:0 0 78px;color:var(--dim)}
+
+/* 結果 */
+.res{display:flex;align-items:center;gap:8px;margin-top:11px;
+  border-top:1px solid var(--line);padding-top:10px;font-family:var(--mono);
+  font-size:13px}
+.res .badge{font-size:10px;letter-spacing:.1em;padding:2px 7px;border-radius:2px;
+  font-family:var(--jp);font-weight:600}
+.res.win .badge{background:var(--good);color:#0E1512}
+.res.lose .badge{background:#3A4049;color:var(--dim)}
+.res .pay{margin-left:auto;color:var(--dim)}
+.res.win .pay{color:var(--good)}
+
+/* 自分の記録 */
+.ledger{background:var(--panel);border:1px solid var(--line);border-radius:3px;
+  padding:16px}
+.lrow{display:flex;justify-content:space-between;align-items:baseline;
+  padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+.lrow:last-child{border-bottom:0}
+.lrow .v{font-family:var(--mono);font-size:16px;font-variant-numeric:tabular-nums}
+.lrow .v.neg{color:var(--signal)} .lrow .v.pos{color:var(--good)}
+.cmp{margin-top:12px;font-size:11px;color:var(--dim2);line-height:1.7}
+
+.empty{color:var(--dim2);font-size:13px;padding:20px 0;text-align:center}
+.plan{background:var(--panel);border:1px solid var(--line);border-radius:3px;
+  overflow:hidden}
+.prow{display:flex;align-items:center;gap:10px;padding:9px 13px;
+  border-bottom:1px solid var(--line);font-size:13px}
+.prow:last-child{border-bottom:0}
+.prow .tm{font-family:var(--mono);font-size:12px;color:var(--dim);width:44px}
+.prow .nm{flex:1;font-family:var(--disp);font-size:15px;letter-spacing:.02em}
+.prow .st{font-size:10px;letter-spacing:.1em;color:var(--dim2)}
+.prow .st.buy{color:var(--ink);font-weight:600}
+.prow .st.skip{color:var(--dim2)}
+.prow2{border-bottom:1px solid var(--line);padding:9px 13px}
+.prow2:last-child{border-bottom:0}
+.pline{display:flex;align-items:center;gap:10px;font-size:13px}
+.pline .tm{font-family:var(--mono);font-size:12px;color:var(--dim);width:44px}
+.pline .nm{flex:1;font-family:var(--disp);font-size:15px;letter-spacing:.02em}
+.pline .st{font-size:10px;letter-spacing:.1em;color:var(--dim2)}
+.pline .st.buy{color:var(--ink);font-weight:600}
+.pline .st.hit{color:var(--good);font-weight:600}
+.pline .st.miss{color:var(--dim2)}
+.pbuy{font-family:var(--mono);font-size:11px;color:var(--dim);
+  margin:5px 0 0 54px;line-height:1.8}
+.pbuy b{color:var(--ink);font-weight:500}
+.pbuy .drift{color:var(--dim2);font-size:10px}
+footer{margin-top:30px;padding:16px 0 0;border-top:1px solid var(--line);
+  font-size:11px;color:var(--dim2);line-height:1.8}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="mark">大時計<small>OHDOKEI</small></div>
+  <div class="stamp" id="stamp">—</div>
+</header>
+
+<div class="clock">
+  <div class="dial" id="dial">
+    <svg width="186" height="186" viewBox="0 0 186 186">
+      <g class="ticks" id="ticks"></g>
+      <circle class="track" cx="93" cy="93" r="78"></circle>
+      <circle class="arc" id="arc" cx="93" cy="93" r="78"
+              stroke-dasharray="490.1" stroke-dashoffset="490.1"></circle>
+    </svg>
+    <div class="face">
+      <div class="remain" id="remain">--<span>分</span></div>
+      <div class="until" id="until">締切まで</div>
+    </div>
+  </div>
+  <div class="where" id="where">本日の開催を待っています</div>
+</div>
+
+<div class="sec" id="upcoming"></div>
+<div class="sec" id="plan"></div>
+<div class="sec" id="judged"></div>
+<div class="sec" id="done"></div>
+
+<div class="sec">
+  <h2>自分の記録</h2>
+  <div class="ledger" id="ledger"></div>
+</div>
+
+<footer>
+  <b style="color:var(--dim)">6倍以下の組がちょうど2点あるレースだけ、その2点を買います。</b>
+  予想はしていません。市場が2つの決着に金を集中させているレースを拾っているだけです。<br>
+  132,219レースの実測で 86.7% ± 1.3%。年度別でも 84.1 / 87.2 / 90.6 / 89.8%。<br>
+  参考: 1点だけのレースは82.3%、3点あるレースは77.2%、100倍以上の穴は48.1%。<br>
+  表示している時刻は<b>ネット投票の締切</b>です。公式の「締切予定時刻」は本場のもので、
+  テレボートはそれより3分早く締め切られるため、3分引いています。<br>
+  判定はその6〜14分前に1回。逃したレースだけ3〜6分前に拾い直します(直前判定)。
+  締切時刻が遅延した場合は、オッズを取るたびに最新の予定表で追随します。<br>
+  締切後にもう一度オッズを取り、判定時とのズレを記録しています。<br>
+  <b style="color:var(--dim)">それでも86.7%です。長く続ければ必ず負けます。</b>娯楽費として。
+</footer>
+
+</div>
+
+<script>
+const DATA='data.json';
+const LS='ohdokei.bets.v1';
+let D=null, bets=load();
+
+function load(){try{return JSON.parse(localStorage.getItem(LS))||{}}catch(e){return{}}}
+function save(){localStorage.setItem(LS,JSON.stringify(bets))}
+const yen=n=>n.toLocaleString('ja-JP');
+const pct=x=>(x*100).toFixed(0)+'%';
+
+/* 目盛り(大時計は1分計。外周に12の目盛り) */
+(function(){
+  let s='';
+  for(let i=0;i<60;i++){
+    const a=i*6*Math.PI/180, r1=i%5?82:78, r2=86;
+    s+=`<line class="${i%5?'':'major'}" x1="${93+Math.sin(a)*r1}" y1="${93-Math.cos(a)*r1}"
+        x2="${93+Math.sin(a)*r2}" y2="${93-Math.cos(a)*r2}"/>`;
+  }
+  document.getElementById('ticks').innerHTML=s;
+})();
+
+function closeAt(r){
+  const [h,m]=(r.net||r.close).split(':').map(Number);   // ネット投票の実質締切
+  const d=new Date(); d.setHours(h,m,0,0); return d;
+}
+function sorted(){
+  if(!D) return [];
+  return Object.entries(D.races).map(([k,r])=>({k,...r}))
+    .sort((a,b)=>closeAt(a)-closeAt(b));
+}
+
+function chips(pts){
+  return pts.map(p=>{
+    const n=p.c.split('-').map(x=>`<i class="n c${x}">${x}</i>`).join('');
+    return `<div class="buy">${n}<span class="o">${p.o.toFixed(1)}</span></div>`;
+  }).join('');
+}
+
+function card(r,next){
+  const bet=bets[r.k], stake=r.stake||(r.points.length*100);
+  let res='';
+  if(r.result){
+    const w=r.result.won;
+    res=`<div class="res ${w?'win':'lose'}"><span class="badge">${w?'的中':'不的中'}</span>
+      ${r.result.hit}<span class="pay">${w?'+'+yen(r.result.pay)+'円':'—'}</span></div>`;
+  }
+  const back=Math.round(r.exp_roi*100);
+  const tag = r.late ? '<span class="tag drop">直前判定</span>'
+                     : `<span class="tag prov">${r.mins_at}分前</span>`;
+  return `<div class="card ${next?'next':''}">
+    <div class="chead"><b>${r.venue} <em style="font-style:normal;color:var(--dim)">${r.rno}R</em>${tag}</b>
+      <span class="t">${r.net||r.close} 締切</span></div>
+    <div class="buys">${chips(r.points)}</div>
+    <div class="stats">
+      <div class="stat"><div class="k">的中率</div><div class="v">${pct(r.hit_rate)}</div></div>
+      <div class="stat"><div class="k">期待回収率</div><div class="v">${pct(r.exp_roi)}</div></div>
+      <div class="stat"><div class="k">払戻</div>
+        <div class="v sm">${yen(r.pay_lo)}〜${yen(r.pay_hi)}</div></div>
+    </div>
+    <div class="gauge">
+      <div class="gbar"><i class="back" style="width:${back}%"></i>
+        <i class="cut" style="width:${100-back}%"></i></div>
+      <div class="gnote">${stake}円 → 平均 ${Math.round(stake*r.exp_roi)}円 が戻る
+        ${r.final?'<br>締切時 '+r.points.map((p,i)=>p.o+'→'+r.final.odds[i]).join(' / ')+
+          (r.final.still?'　条件維持':'　<span style="color:var(--signal)">条件外れ</span>'):''}</div>
+    </div>
+    ${r.result?res:`<div class="act">
+      <button class="${bet?'on':''}" onclick="toggle('${r.k}')">
+        ${bet?'買った '+yen(bet.stake)+'円':'買った'}</button>
+      ${bet?`<button class="ghost" onclick="toggle('${r.k}')">取消</button>`:''}
+    </div>`}
+  </div>`;
+}
+
+function toggle(k){
+  if(bets[k]) delete bets[k];
+  else{
+    const r=D.races[k];
+    bets[k]={stake:r.stake||(r.points.length*100),points:r.points.length,
+             exp:r.exp_roi,hit:r.hit_rate};
+  }
+  save(); render();
+}
+
+function ledger(){
+  const rows=Object.entries(bets).map(([k,b])=>({k,b,r:D&&D.races[k]}));
+  const settled=rows.filter(x=>x.r&&x.r.result);
+  const inv=rows.reduce((s,x)=>s+x.b.stake,0);
+  const ret=settled.reduce((s,x)=>s+(x.r.result.won?x.r.result.pay:0),0);
+  const sinv=settled.reduce((s,x)=>s+x.b.stake,0);
+  const wins=settled.filter(x=>x.r.result.won).length;
+  const el=document.getElementById('ledger');
+  if(!rows.length){
+    el.innerHTML=`<div class="empty">まだ記録がありません。<br>
+      買ったレースの「買った」を押すと、ここに実績が貯まります。</div>`;
+    return;
+  }
+  const roi=sinv?ret/sinv:0;
+  const exp=settled.length?settled.reduce((s,x)=>s+x.b.exp,0)/settled.length:0;
+  const pl=ret-sinv;
+  el.innerHTML=`
+    <div class="lrow"><span>買ったレース</span><span class="v">${rows.length}</span></div>
+    <div class="lrow"><span>投資</span><span class="v">${yen(inv)}円</span></div>
+    <div class="lrow"><span>回収</span><span class="v">${yen(ret)}円</span></div>
+    <div class="lrow"><span>収支</span>
+      <span class="v ${pl<0?'neg':'pos'}">${pl>=0?'+':''}${yen(pl)}円</span></div>
+    <div class="lrow"><span>回収率</span>
+      <span class="v">${settled.length?pct(roi):'—'}</span></div>
+    <div class="lrow"><span>的中</span>
+      <span class="v">${wins} / ${settled.length}</span></div>
+    <div class="cmp">${settled.length
+      ? `予想 ${pct(exp)} に対して実測 ${pct(roi)}。`+
+        (settled.length<50?'まだ'+settled.length+'レースなので、この差はほぼ運です。'
+                          :'差が続くならデータを疑ってください。')
+      : '結果が出ると、予想値と実測値を並べて表示します。'}</div>`;
+}
+
+function render(){
+  if(!D){return}
+  const st=document.getElementById('stamp');
+  st.textContent=D.updated||'';
+  if(D.updated){
+    const [dd,tt]=D.updated.split(' '), [uh,um]=tt.split(':').map(Number);
+    const u=new Date(); u.setHours(uh,um,0,0);
+    const age=(new Date()-u)/60000;
+    if(age>15){st.textContent=D.updated+'（'+Math.round(age)+'分前）';
+               st.style.color='var(--signal)';}
+    else st.style.color='';
+  }
+  const all=sorted(), now=new Date();
+  const up=all.filter(r=>!r.result && closeAt(r)>new Date(now-90000));
+  const dn=all.filter(r=>r.result).reverse();
+
+  const u=document.getElementById('upcoming');
+  u.innerHTML=up.length
+    ? `<h2>締切が近い順</h2>`+up.map((r,i)=>card(r,i===0)).join('')
+    : `<h2>締切が近い順</h2><div class="empty">いま候補はありません。<br>
+       6倍以下がちょうど2点あるレースだけ出ます。<br>
+       1日8〜9レースです。</div>`;
+
+  const sc=(D.schedule||[]).map(x=>({...x,r:D.races[x.key]}))
+    .filter(x=>closeAt(x)>new Date(now-60000)).slice(0,10);
+  const p=document.getElementById('plan');
+  p.innerHTML = sc.length ? `<h2>これからの締切</h2><div class="plan">`+
+    sc.map(x=>{
+      const st = !x.r ? '<span class="st">まだ</span>'
+        : x.r.status==='buy' ? '<span class="st buy">買い目あり</span>'
+        : `<span class="st skip">見送り ${x.r.n_cheap}点</span>`;
+      return `<div class="prow"><span class="tm">${x.net||x.close}</span>
+        <span class="nm">${x.venue} ${x.rno}R</span>${st}</div>`;
+    }).join('')+`</div>` : '';
+
+  // 今日判定したレース(買い目あり/見送り)を一覧で
+  const jd=all.filter(r=>r.status).sort((a,b)=>closeAt(b)-closeAt(a));
+  const nb=jd.filter(r=>r.status==='buy').length;
+  const rs=jd.filter(r=>r.status==='buy'&&r.result);
+  const wn=rs.filter(r=>r.result.won).length;
+  const inv=rs.reduce((s,r)=>s+r.stake,0);
+  const ret=rs.reduce((s,r)=>s+(r.result.won?r.result.pay:0),0);
+  const sum = rs.length ? `　実績 ${wn}/${rs.length}的中　`+
+      `${yen(ret)}/${yen(inv)}円 (${(ret/inv*100).toFixed(0)}%)` : '';
+  const j=document.getElementById('judged');
+  j.innerHTML = jd.length ? `<h2>今日判定したレース　${nb}/${jd.length}件が該当${sum}</h2>
+    <div class="plan">`+jd.slice(0,40).map(x=>{
+      let st,cls='';
+      if(x.status!=='buy') st=`<span class="st skip">見送り ${x.n_cheap}点</span>`;
+      else if(x.result) {st=x.result.won?`<span class="st hit">的中 +${yen(x.result.pay)}</span>`
+                                          :`<span class="st miss">不的中</span>`;}
+      else st=`<span class="st buy">買い目あり</span>`;
+      const lines=[];
+      if(x.status==='buy'){
+        lines.push(`<b>買い目</b> ${x.points.map(p=>p.c+' '+p.o.toFixed(1)+'倍').join('　')}`);
+        if(x.final) lines.push(`<span class="drift">締切時 ${x.final.odds.join(' / ')}倍
+          ${x.final.still?'条件維持':'<b style="color:var(--signal)">条件外れ</b>'}</span>`);
+      }else if(x.top3){
+        lines.push(`<span class="drift">最安 ${x.top3.map(p=>p.c+' '+p.o.toFixed(1)+'倍').join('　')}</span>`);
+      }
+      if(x.result){
+        const w=x.result.won;
+        lines.push(`<b>結果</b> ${x.result.hit}　${yen(x.result.pay)}円`+
+          (x.status==='buy'?(w?'　<b style="color:var(--good)">的中</b>':'　不的中')
+                           :'　<span class="drift">買っていれば'+
+             (x.top3&&x.top3.some(p=>p.c===x.result.hit)?'':'外れ')+'</span>'));
+      }
+      lines.push(`<span class="drift">判定 ${x.mins_at}分前${x.late?'(直前)':''}</span>`);
+      return `<div class="prow2"><div class="pline"><span class="tm">${x.net||x.close}</span>
+        <span class="nm">${x.venue} ${x.rno}R</span>${st}</div>
+        <div class="pbuy">${lines.join('<br>')}</div></div>`;
+    }).join('')+`</div>` : '';
+
+  const d=document.getElementById('done');
+  d.innerHTML='';
+
+  ledger(); tick(up[0]);
+}
+
+let target=null;
+function tick(r){
+  if(r!==undefined) target=r;
+  const dial=document.getElementById('dial'), arc=document.getElementById('arc');
+  const rem=document.getElementById('remain'), whe=document.getElementById('where');
+  const unt=document.getElementById('until');
+  if(!target){
+    arc.style.strokeDashoffset=490.1; dial.classList.remove('urgent');
+    rem.innerHTML='--<span>分</span>'; unt.textContent='締切まで';
+    whe.textContent = D&&Object.keys(D.races).length ? '次のレースを待っています'
+                                                     : '本日の開催を待っています';
+    return;
+  }
+  const sec=Math.max(0,(closeAt(target)-new Date())/1000);
+  const urgent=sec<=60;
+  dial.classList.toggle('urgent',urgent);
+  // 60秒以内は大時計と同じ1分計。それ以外は40分を1周とする
+  const frac=urgent?sec/60:Math.min(sec/2400,1);
+  arc.style.strokeDashoffset=490.1*(1-frac);
+  rem.innerHTML = urgent
+    ? Math.ceil(sec)+'<span>秒</span>'
+    : Math.floor(sec/60)+'<span>分</span>';
+  unt.textContent = sec<=0?'締切ました':'締切まで';
+  whe.innerHTML=`${target.venue}<em>${target.rno}R</em>`;
+}
+
+async function pull(){
+  try{
+    const r=await fetch(DATA+'?t='+Date.now(),{cache:'no-store'});
+    if(!r.ok) throw 0;
+    D=await r.json(); render();
+  }catch(e){
+    if(!D) document.getElementById('upcoming').innerHTML=
+      `<h2>締切が近い順</h2><div class="empty">データを読み込めません。<br>
+       data.json が同じ場所にあるか確認してください。</div>`;
+  }
+}
+pull(); setInterval(pull,60000); setInterval(()=>tick(),1000);
+</script>
+</body>
+</html>
