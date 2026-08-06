@@ -1,0 +1,7 @@
+exclude:
+  - raw
+  - tokuten
+  - yosou_model
+  - "*.py"
+  - "*.md"
+  - requirements.txt
