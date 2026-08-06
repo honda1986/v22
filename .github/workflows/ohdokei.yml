@@ -1,15 +1,16 @@
 name: 大時計
 
-# GitHub は高頻度の cron を間引く。1日64回の要求は無視された。
-# そこで「1時間に1回だけ発火させ、その中で56分ループする」形にする。
-# 発火要求は1日18回。predict.yml(1日5回)が動いている水準に近い。
+# GitHub の schedule は数時間に1回しか発火しないことがある(実測)。
+# そこで発火は「来たら儲けもの」扱いにし、1回の発火で5.5時間ループする。
+# 次の発火が来たら cancel-in-progress で古いループを打ち切って交代。
+# → 発火が5.5時間に1回でもあれば切れ目なく動く。深夜は自分で止まる。
 on:
   workflow_dispatch:
     inputs:
       minutes:
         description: '何分間ループするか(手動確認は 2 くらい)'
         required: false
-        default: '56'
+        default: '330'
       test_notify:
         description: 'テスト通知だけ送る'
         type: boolean
@@ -45,7 +46,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,10 +55,10 @@ jobs:
       - name: 依存インストール
         run: pip install requests beautifulsoup4
 
-      - name: 56分間ループして買い目を作る
+      - name: 発火のたびに5.5時間ループ(次の発火が来たら交代)
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          LOOP_MIN: ${{ github.event.inputs.minutes || '56' }}
+          LOOP_MIN: ${{ github.event.inputs.minutes || '330' }}
           TESTN: ${{ github.event.inputs.test_notify }}
         run: |
           git config user.name  "github-actions[bot]"
@@ -91,6 +92,12 @@ jobs:
               done
             fi
 
+            # 深夜は自分で止まる(レースが無い)
+            JH=$(TZ=Asia/Tokyo date +%H | sed 's/^0//')
+            if [ "$JH" -ge 1 ] && [ "$JH" -lt 7 ]; then
+              echo "JST ${JH}時。本日の開催は終了しました。"
+              break
+            fi
             NOW=$(date +%s)
             [ $NOW -ge $END ] && break
             WAIT=$(( 300 - (NOW - T0) ))
@@ -100,14 +107,4 @@ jobs:
             echo "次の周回まで ${WAIT}秒"
             sleep $WAIT
           done
-          echo "ループ終了 (${N}周)"        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add ohdokei/data.json
-          git diff --cached --quiet && echo "変更なし" && exit 0
-          git commit -m "ohdokei: 更新"
-          for i in 1 2 3 4 5; do
-            git pull --rebase --autostash && git push && exit 0
-            sleep 8
-          done
-          exit 1
+          echo "ループ終了 (${N}周)"
