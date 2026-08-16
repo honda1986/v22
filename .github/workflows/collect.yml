@@ -1,0 +1,106 @@
+name: 毎日のデータ収集
+
+# raw(オッズ・着順・出走表) と tokuten(今節成績・コース別) を貯める。
+# どちらも保存済みの日は飛ばすので、何度回しても安全。
+#
+#   raw     … info.kyotei.fun から。1日1ファイル raw/YYYYMMDD.json.gz
+#   tokuten … uchisankaku から。raw を索引にして開催場だけ取る
+#             (なので raw を先に取る)
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: '直近何日ぶんを見るか(保存済みは飛ばします)'
+        required: false
+        default: '5'
+      start:
+        description: '開始日 YYYYMMDD(古い期間を埋めたいとき)'
+        required: false
+        default: ''
+      end:
+        description: '終了日 YYYYMMDD'
+        required: false
+        default: ''
+      force:
+        description: '保存済みの日も取り直す(項目を増やしたとき)'
+        type: boolean
+        required: false
+        default: false
+      minutes:
+        description: '打ち切り分数。途中で止まっても再実行で続きから'
+        required: false
+        default: '120'
+  schedule:
+    - cron: '0 18 * * *'   # JST 3:00 前日のレースが全部終わってから
+
+concurrency:
+  group: kyotei-write
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 依存インストール
+        run: pip install requests beautifulsoup4
+
+      - name: 収集する範囲を決める
+        id: range
+        run: |
+          if [ -n "${{ github.event.inputs.start }}" ] && \
+             [ -n "${{ github.event.inputs.end }}" ]; then
+            echo "arg=--start ${{ github.event.inputs.start }} --end ${{ github.event.inputs.end }}" >> $GITHUB_OUTPUT
+          else
+            echo "arg=--days ${{ github.event.inputs.days || '5' }}" >> $GITHUB_OUTPUT
+          fi
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            echo "force=--force" >> $GITHUB_OUTPUT
+          else
+            echo "force=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: raw を取る(オッズ・着順・出走表)
+        run: |
+          echo "実行: python backfill.py ${{ steps.range.outputs.arg }}"
+          python backfill.py ${{ steps.range.outputs.arg }} \
+            --workers 10 \
+            --minutes ${{ github.event.inputs.minutes || '120' }} \
+            --out raw
+
+      - name: tokuten を取る(今節成績・コース別)
+        run: |
+          echo "実行: python tokuten.py ${{ steps.range.outputs.arg }} ${{ steps.range.outputs.force }}"
+          python tokuten.py ${{ steps.range.outputs.arg }} \
+            ${{ steps.range.outputs.force }} \
+            --minutes ${{ github.event.inputs.minutes || '120' }} \
+            --raw raw --out tokuten
+
+      - name: 診断
+        run: |
+          echo "raw     $(ls raw     2>/dev/null | wc -l) ファイル  $(du -sh raw     2>/dev/null | cut -f1)"
+          echo "tokuten $(ls tokuten 2>/dev/null | wc -l) ファイル  $(du -sh tokuten 2>/dev/null | cut -f1)"
+          echo "--- 直近5日 ---"
+          ls -1 raw | tail -5
+          python diag.py --out raw || true
+
+      - name: コミット
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add raw tokuten
+          git diff --cached --quiet && echo "変更なし" && exit 0
+          git commit -m "collect: レースデータを追加"
+          for i in 1 2 3 4 5; do
+            git pull --rebase --autostash && git push && exit 0
+            echo "push失敗 リトライ $i"; sleep 10
+          done
+          exit 1
