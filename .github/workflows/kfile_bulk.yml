@@ -14,10 +14,14 @@ on:
         description: '終了日 YYYYMMDD'
         required: true
         default: '20260815'
-      sleep:
-        description: 'リクエスト間隔(秒)'
+      workers:
+        description: '同時接続数(通信待ちを埋める用)'
         required: false
-        default: '1.5'
+        default: '12'
+      gap:
+        description: '最小間隔 秒(これが負荷の上限)'
+        required: false
+        default: '1.0'
 
 concurrency:
   group: kfile
@@ -26,7 +30,7 @@ concurrency:
 jobs:
   bulk:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 180
     permissions:
       contents: write
     steps:
@@ -37,17 +41,25 @@ jobs:
           python-version: '3.11'
 
       - name: LZH展開ツール
+        timeout-minutes: 5
         run: |
-          sudo apt-get -qq update
-          sudo apt-get -qq install -y lhasa
-          pip -q install requests lhafile || pip -q install requests
+          set -x
+          pip install --disable-pip-version-check requests
+          if pip install --disable-pip-version-check lhafile; then
+            echo "lhafile OK"
+          else
+            echo "lhafile が入らないので lhasa を試します"
+            sudo apt-get install -y --no-install-recommends lhasa
+          fi
+          python -c "import lhafile; print('lhafile import OK')" || which lha
 
       - name: 取得
         run: |
           python kfile.py \
             --from "${{ inputs.date_from }}" \
             --to   "${{ inputs.date_to }}" \
-            --sleep "${{ inputs.sleep }}"
+            --workers "${{ inputs.workers }}" \
+            --gap "${{ inputs.gap }}"
 
       - name: 集計
         run: |
