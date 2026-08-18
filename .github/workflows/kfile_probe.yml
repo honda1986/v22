@@ -1,0 +1,28 @@
+name: kfile probe
+
+# GitHub Actions から www1.mbrace.or.jp に繋がるかを確認するだけ。
+# 何も保存しない。本番を組む前に1回だけ手で回す。
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: LZH展開ツール
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y lhasa
+          pip -q install requests lhafile || pip -q install requests
+          echo "lha: $(which lha || echo なし)"
+
+      - name: 接続確認
+        run: python kfile.py --probe
