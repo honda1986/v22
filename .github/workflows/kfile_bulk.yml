@@ -1,0 +1,68 @@
+name: kfile bulk
+
+# 過去分の一括取得。手動起動のみ。
+# 既にあるファイルは飛ばすので、途中で失敗しても再実行すれば続きから進む。
+
+on:
+  workflow_dispatch:
+    inputs:
+      date_from:
+        description: '開始日 YYYYMMDD'
+        required: true
+        default: '20240301'
+      date_to:
+        description: '終了日 YYYYMMDD'
+        required: true
+        default: '20260815'
+      sleep:
+        description: 'リクエスト間隔(秒)'
+        required: false
+        default: '1.5'
+
+concurrency:
+  group: kfile
+  cancel-in-progress: false
+
+jobs:
+  bulk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: LZH展開ツール
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y lhasa
+          pip -q install requests lhafile || pip -q install requests
+
+      - name: 取得
+        run: |
+          python kfile.py \
+            --from "${{ inputs.date_from }}" \
+            --to   "${{ inputs.date_to }}" \
+            --sleep "${{ inputs.sleep }}"
+
+      - name: 集計
+        run: |
+          echo "ファイル数: $(ls kfile/*.json.gz 2>/dev/null | wc -l)"
+          echo "容量: $(du -sh kfile 2>/dev/null | cut -f1)"
+
+      - name: コミット
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add kfile
+          if git diff --cached --quiet; then
+            echo "変更なし"
+          else
+            git commit -m "kfile: ${{ inputs.date_from }}〜${{ inputs.date_to }}"
+            git pull --rebase --autostash
+            git push
+          fi
