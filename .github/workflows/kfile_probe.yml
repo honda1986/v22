@@ -17,12 +17,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: LZH展開ツール
+      - - name: LZH展開ツール
+        timeout-minutes: 5
         run: |
-          sudo apt-get -qq update
-          sudo apt-get -qq install -y lhasa
-          pip -q install requests lhafile || pip -q install requests
-          echo "lha: $(which lha || echo なし)"
+          set -x
+          pip install --disable-pip-version-check requests
+          if pip install --disable-pip-version-check lhafile; then
+            echo "lhafile OK"
+          else
+            echo "lhafile が入らないので lhasa を試します"
+            sudo apt-get install -y --no-install-recommends lhasa
+          fi
+          python -c "import lhafile; print('lhafile import OK')" || which lha
 
       - name: 接続確認
         run: python kfile.py --probe
