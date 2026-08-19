@@ -1,0 +1,57 @@
+name: kfile daily
+
+# 毎日1ファイルずつ追加する。
+# Kファイルは全開催終了の約40分後(通常21:30頃)に公開される。
+# ミッドナイト開催もあるので JST 03:00 に前日ぶんを取る。
+# 直近3日を対象にして、取り逃しがあれば自動で埋める(既存は飛ばす)。
+
+on:
+  schedule:
+    - cron: '0 18 * * *'      # UTC 18:00 = JST 03:00
+  workflow_dispatch:
+
+concurrency:
+  group: kfile
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: LZH展開ツール
+        timeout-minutes: 5
+        run: |
+          set -x
+          pip install --disable-pip-version-check requests
+          if pip install --disable-pip-version-check lhafile; then
+            echo "lhafile OK"
+          else
+            echo "lhafile が入らないので lhasa を試します"
+            sudo apt-get install -y --no-install-recommends lhasa
+          fi
+          python -c "import lhafile; print('lhafile import OK')" || which lha
+
+      - name: 取得(直近3日・既存は飛ばす)
+        run: python kfile.py --days 3 --workers 3 --gap 1.0
+
+      - name: コミット
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add kfile
+          if git diff --cached --quiet; then
+            echo "変更なし"
+          else
+            git commit -m "kfile: $(date -u -d '+9 hours' +%Y-%m-%d)"
+            git pull --rebase --autostash
+            git push
+          fi
